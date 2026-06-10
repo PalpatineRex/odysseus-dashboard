@@ -8,6 +8,20 @@ Addon **centre de contrôle** pour [Odysseus](https://github.com/pewdiepie-archd
 >
 > Addon non-officiel : ces fichiers se déposent dans un dossier Odysseus (le `.html`/`.js` dans `static\`), mais le launcher fonctionne seul pour la partie LLM.
 
+## Contenu du repo
+- `Odysseus-Dashboard.exe` (71 Ko) — **prêt à lancer** (compilé depuis `dashboard-launcher.ps1` via ps2exe) + `WebView2Loader.dll`.
+- `dashboard-launcher.ps1` — la source du launcher/backend (à recompiler si tu modifies le `.ps1` ; voir `DASHBOARD.md`).
+- `static/dashboard.html` + `dashboard-fx.js` — l'UI (lue au runtime → un changement HTML = relancer l'exe, pas de recompil).
+- `Odysseus.bat` / `Odysseus-Stop.bat` / `Odysseus-Update.bat` — contrôle Docker d'Odysseus (appelés par les boutons du dashboard).
+- `Update-LlamaServer.ps1` — met à jour le binaire llama-server.
+- `DASHBOARD.md` / `.en.md` — doc complète (archi, pièges, build).
+
+## Prérequis (à fournir soi-même, non inclus)
+- **WebView2 Runtime** (Evergreen, Microsoft) — déjà présent sur la plupart des Windows 10/11.
+- **llama-server** (llama.cpp build CUDA/CPU) dans un sous-dossier `llama-win\` — télécharger sur [github.com/ggml-org/llama.cpp/releases](https://github.com/ggml-org/llama.cpp/releases) (non redistribué ici, ~1 Go). Le dashboard le lance avec les bons flags.
+- Pour les boutons Docker : une install d'**Odysseus** + Docker Desktop.
+- Les chemins par défaut visent `C:\Odysseus\` — adapter dans le `.ps1` si besoin.
+
 ## Ce que c'est
 Une fenêtre **WebView2 frameless** (`OdyForm`, C#) qui charge `static/dashboard.html` (UI HTML/CSS/JS, vrais thèmes + effets d'Odysseus), pilotée par un backend PowerShell compilé en exe via ps2exe.
 

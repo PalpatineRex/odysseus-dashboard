@@ -1,7 +1,14 @@
-# Sauvegarde des SOURCES uniquement
+# Sauvegarde des SOURCES + l'exe prêt-à-l'emploi (petit, 71 Ko)
 *.exe
 *.dll
+!Odysseus-Dashboard.exe
+!WebView2Loader.dll
+# Gros binaires téléchargeables séparément (voir README)
 llama-win/
+llama-win.prev/
 _dl/
+webview2/
+*.old.exe
+*.bak.exe
 Thumbs.db
 desktop.ini
