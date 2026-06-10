@@ -1,8 +1,12 @@
 # Odysseus Dashboard
 
-Centre de contrôle maison pour [Odysseus](https://github.com/pewdiepie-archdaemon/odysseus) + le serveur LLM local (llama-server). Conçu par David (PalpatineRex).
+Addon **centre de contrôle** pour [Odysseus](https://github.com/pewdiepie-archdaemon/odysseus) — **et lanceur de LLM locaux à part entière**. Conçu par David (PalpatineRex). Libre à qui veut s'en servir.
 
-> **Sauvegarde des sources du dashboard.** Les fichiers vivent en réalité DANS le working tree d'Odysseus (`C:\Odysseus\`) — ce repo en est la copie versionnée/sauvegardée, car ils sont *untracked* dans le repo upstream. À terme : contribution au repo public Odysseus.
+> **Deux usages :**
+> 1. **Avec Odysseus** — boutons Docker (démarrer/arrêter/update/ouvrir), Odysseus découvre le llama-server lancé ici sur `host.docker.internal:8000`.
+> 2. **Standalone** — rien que pour **lancer/piloter des LLM locaux** (llama-server) : scan automatique des GGUF, presets de samplers par famille de modèle, contexte/ngl/port, auto-offload MoE, mode rapide (reasoning off), test du modèle, logs temps réel, VRAM live. Pas besoin d'Odysseus pour ça.
+>
+> Addon non-officiel : ces fichiers se déposent dans un dossier Odysseus (le `.html`/`.js` dans `static\`), mais le launcher fonctionne seul pour la partie LLM.
 
 ## Ce que c'est
 Une fenêtre **WebView2 frameless** (`OdyForm`, C#) qui charge `static/dashboard.html` (UI HTML/CSS/JS, vrais thèmes + effets d'Odysseus), pilotée par un backend PowerShell compilé en exe via ps2exe.
