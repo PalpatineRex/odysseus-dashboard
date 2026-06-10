@@ -29,7 +29,8 @@
   }
 
   .app { position:relative; z-index:1; display:flex; flex-direction:column; height:100vh; }
-  .topbar { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:6px 10px; padding:9px 24px; flex-shrink:0; }
+  /* padding-right reserve le coin haut-droit pour les boutons fenetre (en absolute, comme une vraie barre de titre) */
+  .topbar { position:relative; display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:6px 10px; padding:9px 118px 9px 24px; flex-shrink:0; }
   .topbar .ttl { font-weight:600; font-size:13px; display:flex; align-items:center; gap:8px; opacity:.9; }
   .topbar .ttl .boat { width:17px; height:17px; color:var(--red); }
   .topbar-ctrls { display:flex; flex-wrap:wrap; align-items:center; justify-content:flex-end; gap:6px 14px; }
@@ -69,8 +70,9 @@
   .topbar label { font-size:11px; opacity:.55; }
   .topbar select { width:auto; min-width:140px; }
   .topbar #lang-select { min-width:0; }
-  /* boutons fenetre (frameless) — vivent dans la barre HTML, plus de barre WinForms */
-  .win-ctrls { display:flex; align-items:center; gap:2px; margin-left:4px; }
+  /* boutons fenetre (frameless) — vivent dans la barre HTML, plus de barre WinForms.
+     TOUJOURS en haut a droite (absolute) : ils ne wrappent jamais sous langue/theme en fenetre etroite */
+  .win-ctrls { position:absolute; top:13px; right:14px; display:flex; align-items:center; gap:2px; }
   .win-btn { width:30px; height:26px; display:flex; align-items:center; justify-content:center; background:none; border:none; border-radius:6px; color:var(--fg); opacity:.65; cursor:pointer; font-size:13px; line-height:1; }
   .win-btn:hover { opacity:1; background:color-mix(in srgb,var(--fg) 14%,transparent); }
   .win-btn.win-close:hover { background:var(--red); color:#fff; opacity:1; }
@@ -156,15 +158,22 @@
 
   /* --- Responsive : fenêtre étroite / portrait --- */
   @media (max-width: 580px) {
-    .topbar { padding-left:14px; padding-right:14px; }
+    .topbar { padding-left:14px; }
     .main { padding-left:14px; padding-right:14px; }
     .grid3 { grid-template-columns:repeat(2, minmax(0,1fr)); }
   }
   @media (max-width: 380px) {
-    .topbar { padding-left:10px; padding-right:10px; }
+    .topbar { padding-left:10px; }
     .main { padding-left:10px; padding-right:10px; }
     .grid3 { grid-template-columns:minmax(0,1fr); }
     .topbar select { min-width:0; }
+  }
+  /* fenetre courte (ex: TV 720p maximisee) : marges compactes, sinon la carte LLM
+     deborde de ~36px et affiche une scrollbar qui ne sert a rien */
+  @media (max-height: 730px) {
+    .card > h2 { margin-bottom:8px; }
+    .field { margin-bottom:8px; }
+    .btnrow { margin-top:8px; }
   }
 </style>
 </head>
@@ -273,8 +282,8 @@
       <div class="status"><span class="led off" id="llm-led"></span> <span id="llm-status">LLM : …</span></div>
       <div class="vram"><div class="vram-bar"><div class="vram-fill" id="vram-fill"></div></div><span class="vram-txt" id="vram-txt">VRAM —</span></div>
       <div class="field" style="margin-top:12px">
-        <div class="lbl"><span data-i18n="testResp">Réponse du test</span> · <a id="test-toggle" style="cursor:pointer;text-decoration:underline;opacity:.7;font-size:11px">afficher</a></div>
-        <div class="cmd" id="test-out" data-i18n="testHint" hidden style="min-height:56px; max-height:160px; overflow:auto; color:color-mix(in srgb,var(--fg) 70%,transparent)">Clique « Tester le modèle » pour envoyer un prompt rapide au serveur.</div>
+        <div class="lbl"><span data-i18n="testResp">Réponse du test</span> · <a id="test-toggle" style="cursor:pointer;text-decoration:underline;opacity:.7;font-size:11px">masquer</a></div>
+        <div class="cmd" id="test-out" data-i18n="testHint" style="min-height:56px; max-height:160px; overflow:auto; color:color-mix(in srgb,var(--fg) 70%,transparent)">Clique « Tester le modèle » pour envoyer un prompt rapide au serveur.</div>
       </div>
       <div class="field logfield" style="margin-top:12px">
         <div class="lbl"><span data-i18n="llmLog">Logs llama-server</span> · <a id="log-toggle" style="cursor:pointer;text-decoration:underline;opacity:.7;font-size:11px">masquer</a></div>
@@ -469,6 +478,7 @@
     if (_scanned && !MODELS.length) {
       const sel = $('model'); if (sel) { sel.innerHTML=''; const o=document.createElement('option'); o.textContent=tr('noModels'); sel.appendChild(o); }
     }
+    syncLog(); syncTest();   // libelles afficher/masquer des toggles (pas de data-i18n, etat dynamique)
     renderStatus();
     renderVer();   // la ligne version llama + son bouton sont dynamiques (pas de data-i18n)
     try { localStorage.setItem('ody-dash-lang', lang); } catch(e){}
