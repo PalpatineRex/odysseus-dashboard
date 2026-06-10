@@ -88,6 +88,7 @@
   .wrap > .card.card-elastic { grid-column:1; grid-row:1 / span 2; overflow-y:auto; }
   /* espaceur flexible : mange le vide et pousse le dernier bloc en bas, dans CHAQUE carte */
   #card-llm-spacer { display:none; }
+  #card-llm-presets { border:1px solid var(--border); border-radius:10px; padding:8px 10px; margin-top:8px; background:color-mix(in srgb,var(--panel) 55%,transparent); }
   /* au lieu d'un gros vide avant les boutons : la boite Commande s'etire pour remplir la colonne gauche (comme la boite de logs a droite) */
   #cmd-field { flex:1 1 auto; display:flex; flex-direction:column; margin-bottom:13px; }
   #cmd-field > .cmd { flex:1 1 auto; min-height:62px; overflow:auto; }
@@ -159,6 +160,42 @@
   .switch .track::after { content:''; position:absolute; top:2px; left:2px; width:14px; height:14px; border-radius:50%; background:var(--fg); transition:transform .15s; }
   .switch input:checked + .track { background:var(--accent); }
   .switch input:checked + .track::after { transform:translateX(16px); }
+  #switch-rows { display:flex; flex-direction:column; gap:8px; align-items:flex-start; }
+
+  /* favoris : etoile a cote du select + chips one-click */
+  .model-row { display:flex; gap:6px; align-items:stretch; }
+  .model-row select { flex:1 1 auto; }
+  .star-btn { flex:0 0 auto; width:36px; background:none; border:1px solid color-mix(in srgb,var(--fg) 18%,transparent); border-radius:9px; cursor:pointer; color:var(--fg); font-size:15px; opacity:.75; line-height:1; }
+  .star-btn:hover { border-color:var(--accent); opacity:1; }
+  .star-btn.on { color:#ffd34d; opacity:1; }
+  .fav-chips { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:11px; }
+  .fav-chip { font-size:11px; padding:4px 10px; border:1px solid color-mix(in srgb,var(--fg) 22%,transparent); border-radius:999px; cursor:pointer; background:color-mix(in srgb,var(--fg) 7%,transparent); color:var(--fg); display:inline-flex; align-items:center; max-width:100%; font-family:inherit; }
+  .fav-chip:hover { border-color:var(--accent); background:color-mix(in srgb,var(--accent) 18%,transparent); }
+  .fav-chip > span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:200px; }
+
+  /* garage a modeles (modale) */
+  table.garage { width:100%; border-collapse:collapse; font-size:11.5px; }
+  .garage th { text-align:left; opacity:.6; font-weight:600; padding:4px 6px; border-bottom:1px solid color-mix(in srgb,var(--fg) 16%,transparent); }
+  .garage td { padding:5px 6px; border-bottom:1px solid color-mix(in srgb,var(--fg) 8%,transparent); }
+  .garage tr.g-row { cursor:pointer; }
+  .garage tr.g-row:hover td { background:color-mix(in srgb,var(--fg) 9%,transparent); }
+  .garage .g-name { max-width:250px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .h2btn { background:none; border:none; cursor:pointer; font-size:13px; opacity:.6; padding:0 3px; line-height:1; }
+  .h2btn:hover { opacity:1; }
+
+  /* sparkline historique tok/s */
+  #tps-spark { width:100%; height:34px; display:block; margin-top:8px; }
+
+  /* jauge VRAM predictive (badge dans le label Commande) */
+  .pred-ok { color:#5dd35d; } .pred-warn { color:#d8a657; } .pred-hot { color:var(--red); }
+
+  /* telechargeur GGUF */
+  .dl-row { display:flex; gap:6px; align-items:stretch; }
+  .dl-row input { flex:1 1 auto; }
+  .dl-row .btn { flex:0 0 auto; }
+  .dl-bar { height:5px; border-radius:4px; background:color-mix(in srgb,var(--fg) 13%,transparent); overflow:hidden; margin-top:6px; }
+  .dl-fill { height:100%; width:0; background:var(--accent); transition:width .3s; }
+  #dl-msg { font-size:10.5px; opacity:.8; margin-top:5px; min-height:14px; }
 
   /* --- Responsive : fenêtre étroite / portrait --- */
   @media (max-width: 580px) {
@@ -177,10 +214,23 @@
      et affiche une scrollbar qui ne sert a rien */
   @media (max-height: 730px) {
     .card { --card-pad:12px; }
-    .card > h2 { margin-bottom:8px; }
+    .card > h2 { margin-bottom:6px; }
     .field { margin-bottom:8px; }
     .field > .lbl { margin-bottom:3px; }
     .btnrow { margin-top:8px; }
+    .grid3 { gap:8px 14px; }
+    #cmd-field > .cmd { min-height:56px; }
+    #card-llm-presets { padding-top:6px; padding-bottom:6px; margin-top:6px; }
+    /* les nouveaux blocs ne doivent pas faire re-deborder la carte sur la TV :
+       switches sur une ligne */
+    #switch-rows { flex-direction:row; flex-wrap:wrap; gap:6px 18px; }
+    .fav-chips { margin-bottom:6px; }
+    .fav-chip { padding:3px 10px; }
+  }
+  /* TV uniquement (compact + 2 colonnes) : le telechargeur saute, sinon la carte deborde.
+     En 1 colonne (fenetre etroite) la carte a sa hauteur naturelle -> on le garde. */
+  @media (max-height: 730px) and (min-width: 701px) {
+    #dl-field { display:none; }
   }
 </style>
 </head>
@@ -240,12 +290,22 @@
     </div>
   </div>
 
+  <div id="garage-modal" class="teditor" hidden>
+    <div class="ted-box" style="width:560px;max-width:94vw">
+      <div class="ted-ttl">🏁 <span data-i18n="garage">Garage à modèles</span></div>
+      <div id="garage-wrap" style="max-height:320px;overflow:auto"></div>
+      <div class="ted-btns"><button id="garage-clear" class="btn btn-danger" data-i18n="garageClear">Vider</button><button id="garage-close" class="btn btn-ghost" data-i18n="close">Fermer</button></div>
+      <div class="ted-note" data-i18n="garageHint">Rempli à chaque test réussi · clic sur une ligne = sélectionner le modèle</div>
+    </div>
+  </div>
+
   <main class="main"><div class="wrap" id="panel-grid">
     <section class="card card-elastic" id="card-llm" data-panel="llm">
-      <h2><span class="dot"></span> <span data-i18n="cardLLM">Serveur LLM local</span><span class="grip" data-i18n-title="dragHint" title="Glisser pour réorganiser">⠿</span></h2>
+      <h2><span class="dot"></span> <span data-i18n="cardLLM">Serveur LLM local</span><button class="h2btn" id="garage-btn" style="margin-left:auto" data-i18n-title="garage" title="Garage à modèles">🏁</button><span class="grip" style="margin-left:0" data-i18n-title="dragHint" title="Glisser pour réorganiser">⠿</span></h2>
+      <div class="fav-chips" id="fav-chips" hidden></div>
       <div class="field">
         <div class="lbl" data-i18n="model">Modèle (GGUF)</div>
-        <select id="model"><option data-i18n="scanning">— scan en cours —</option></select>
+        <div class="model-row"><select id="model"><option data-i18n="scanning">— scan en cours —</option></select><button class="star-btn" id="fav-toggle" data-i18n-title="favTitle" title="Ajouter / retirer des favoris">☆</button></div>
       </div>
       <div class="field"><div class="lbl"><span data-i18n="family">Famille détectée</span> <span class="reco" id="fam">—</span></div></div>
       <div class="grid3">
@@ -260,9 +320,12 @@
         <div class="field"><div class="lbl" data-i18n="ngl">GPU layers (-ngl)</div><input type="number" id="ngl" value="99"></div>
         <div class="field"><div class="lbl" data-i18n="port">port</div><input type="number" id="port" value="8000"></div>
       </div>
-      <div class="field" id="cmd-field"><div class="lbl" data-i18n="cmd">Commande</div><div class="cmd" id="cmd">—</div></div>
-      <label class="switch"><input type="checkbox" id="fast"><span class="track"></span> <span data-i18n="fast">Mode rapide (sans réflexion)</span></label>
-      <div class="field" id="card-llm-presets" style="border:1px solid var(--border);border-radius:10px;padding:8px 10px;margin-top:8px;background:color-mix(in srgb,var(--panel) 55%,transparent)"><div class="lbl">💾 <span data-i18n="presets">Presets de réglages</span></div>
+      <div class="field" id="cmd-field"><div class="lbl"><span data-i18n="cmd">Commande</span><span id="vram-pred"></span></div><div class="cmd" id="cmd">—</div></div>
+      <div id="switch-rows">
+        <label class="switch"><input type="checkbox" id="fast"><span class="track"></span> <span data-i18n="fast">Mode rapide (sans réflexion)</span></label>
+        <label class="switch"><input type="checkbox" id="autostart"><span class="track"></span> <span data-i18n="autoStart">Relancer le dernier modèle au démarrage</span></label>
+      </div>
+      <div class="field" id="card-llm-presets"><div class="lbl">💾 <span data-i18n="presets">Presets de réglages</span></div>
         <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:4px">
           <select id="preset-sel" style="flex:1 1 110px;min-width:90px"></select>
           <input id="preset-name" type="text" data-i18n-ph="presetName" placeholder="nom…" maxlength="24" style="flex:1 1 90px;min-width:70px">
@@ -270,6 +333,12 @@
           <button class="btn btn-ghost" id="preset-del" title="suppr" style="flex:0 0 auto">🗑</button>
           <button class="btn btn-ghost" id="preset-io" title="Import / Export JSON" style="flex:0 0 auto">⇅</button>
         </div>
+      </div>
+      <div class="field" id="dl-field" style="margin-top:8px">
+        <div class="lbl"><span>⬇ <span data-i18n="dlTitle">Télécharger un GGUF (URL HuggingFace)</span></span></div>
+        <div class="dl-row"><input id="dl-url" type="text" placeholder="https://huggingface.co/…/model.gguf" spellcheck="false"><button class="btn btn-ghost" id="dl-btn" data-i18n="dlBtn">Télécharger</button></div>
+        <div class="dl-bar" id="dl-bar" hidden><div class="dl-fill" id="dl-fill"></div></div>
+        <div id="dl-msg"></div>
       </div>
       <div id="card-llm-spacer"></div>
       <div class="btnrow">
@@ -288,8 +357,10 @@
       <h2><span class="dot"></span> <span data-i18n="cardMon">État &amp; test</span><span class="grip" data-i18n-title="dragHint" title="Glisser pour réorganiser">⠿</span></h2>
       <div class="status"><span class="led off" id="llm-led"></span> <span id="llm-status">LLM : …</span></div>
       <div class="vram"><div class="vram-bar"><div class="vram-fill" id="vram-fill"></div></div><span class="vram-txt" id="vram-txt">VRAM —</span></div>
+      <canvas id="tps-spark" hidden title="tok/s"></canvas>
       <div class="field" style="margin-top:12px">
-        <div class="lbl"><span data-i18n="testResp">Réponse du test</span> · <a id="test-toggle" style="cursor:pointer;text-decoration:underline;opacity:.7;font-size:11px">masquer</a></div>
+        <div class="lbl"><span><span data-i18n="testResp">Réponse du test</span> · <a id="test-toggle" style="cursor:pointer;text-decoration:underline;opacity:.7;font-size:11px">masquer</a></span><span id="test-tps" class="reco"></span></div>
+        <input id="test-prompt" type="text" data-i18n-ph="testPromptPh" placeholder="Ton prompt de test (vide = présentation auto)" spellcheck="false" style="margin-bottom:6px">
         <div class="cmd" id="test-out" data-i18n="testHint" style="min-height:56px; max-height:160px; overflow:auto; color:color-mix(in srgb,var(--fg) 70%,transparent)">Clique « Tester le modèle » pour envoyer un prompt rapide au serveur.</div>
       </div>
       <div class="field logfield" style="margin-top:12px">
@@ -459,6 +530,16 @@
   Object.assign(I18N.ru, { dragHint:'Перетащите, чтобы изменить порядок' });
   Object.assign(I18N.zh, { dragHint:'拖动以重新排列' });
   Object.assign(I18N.ja, { dragHint:'ドラッグして並べ替え' });
+  Object.assign(I18N.fr, { garage:'Garage à modèles', garageClear:'Vider', garageEmpty:'Aucune mesure — lance « Tester le modèle » pour remplir le garage.', garageHint:'Rempli à chaque test réussi · clic sur une ligne = sélectionner le modèle', favTitle:'Ajouter / retirer des favoris', favHint:'Sélectionner ce modèle et appliquer ses réglages reco', testPromptPh:'Ton prompt de test (vide = présentation auto)', autoStart:'Relancer le dernier modèle au démarrage', dlTitle:'Télécharger un GGUF (URL HuggingFace)', dlBtn:'Télécharger', dlCancelBtn:'Annuler', dlExists:'déjà présent : {n}', dlSpace:'espace disque insuffisant', dlBadUrl:'URL invalide — il faut un lien https direct vers un .gguf', dlNetErr:'échec du téléchargement (réseau ?) — réessaie', dlDone:'✓ {n} téléchargé — il est dans la liste', dlCancelled:'téléchargement annulé', gpuHot:'GPU très chaud', predOver:'Risque de débordement VRAM — réduis le contexte ou prends une quantisation plus petite', predMoe:'gros modèle : experts en RAM (--cpu-moe auto)' });
+  Object.assign(I18N.en, { garage:'Model garage', garageClear:'Clear', garageEmpty:'No measurements yet — run "Test the model" to fill the garage.', garageHint:'Filled on every successful test · click a row to select that model', favTitle:'Add / remove favorite', favHint:'Select this model and apply its recommended settings', testPromptPh:'Your test prompt (empty = auto introduction)', autoStart:'Relaunch last model on startup', dlTitle:'Download a GGUF (HuggingFace URL)', dlBtn:'Download', dlCancelBtn:'Cancel', dlExists:'already present: {n}', dlSpace:'not enough disk space', dlBadUrl:'invalid URL — direct https link to a .gguf required', dlNetErr:'download failed (network?) — retry', dlDone:'✓ {n} downloaded — it is now in the list', dlCancelled:'download cancelled', gpuHot:'GPU running very hot', predOver:'VRAM overflow risk — lower the context or pick a smaller quant', predMoe:'big model: experts in RAM (--cpu-moe auto)' });
+  Object.assign(I18N.es, { garage:'Garaje de modelos', garageClear:'Vaciar', garageEmpty:'Sin mediciones — usa «Probar el modelo» para llenar el garaje.', garageHint:'Se llena con cada prueba exitosa · clic en una fila = seleccionar el modelo', favTitle:'Añadir / quitar favorito', favHint:'Seleccionar este modelo y aplicar sus ajustes recomendados', testPromptPh:'Tu prompt de prueba (vacío = presentación automática)', autoStart:'Relanzar el último modelo al iniciar', dlTitle:'Descargar un GGUF (URL de HuggingFace)', dlBtn:'Descargar', dlCancelBtn:'Cancelar', dlExists:'ya existe: {n}', dlSpace:'espacio en disco insuficiente', dlBadUrl:'URL no válida — se necesita un enlace https directo a un .gguf', dlNetErr:'descarga fallida (¿red?) — reintenta', dlDone:'✓ {n} descargado — ya está en la lista', dlCancelled:'descarga cancelada', gpuHot:'GPU muy caliente', predOver:'Riesgo de desbordar la VRAM — baja el contexto o usa una cuantización menor', predMoe:'modelo grande: expertos en RAM (--cpu-moe auto)' });
+  Object.assign(I18N.de, { garage:'Modell-Garage', garageClear:'Leeren', garageEmpty:'Noch keine Messungen — nutze „Modell testen", um die Garage zu füllen.', garageHint:'Wird bei jedem erfolgreichen Test gefüllt · Klick auf eine Zeile = Modell auswählen', favTitle:'Favorit hinzufügen / entfernen', favHint:'Dieses Modell auswählen und empfohlene Einstellungen anwenden', testPromptPh:'Dein Test-Prompt (leer = automatische Vorstellung)', autoStart:'Letztes Modell beim Start neu laden', dlTitle:'GGUF herunterladen (HuggingFace-URL)', dlBtn:'Herunterladen', dlCancelBtn:'Abbrechen', dlExists:'bereits vorhanden: {n}', dlSpace:'nicht genug Speicherplatz', dlBadUrl:'ungültige URL — direkter https-Link zu einer .gguf nötig', dlNetErr:'Download fehlgeschlagen (Netzwerk?) — erneut versuchen', dlDone:'✓ {n} heruntergeladen — jetzt in der Liste', dlCancelled:'Download abgebrochen', gpuHot:'GPU sehr heiß', predOver:'VRAM-Überlauf-Risiko — Kontext senken oder kleinere Quantisierung wählen', predMoe:'großes Modell: Experten im RAM (--cpu-moe auto)' });
+  Object.assign(I18N.it, { garage:'Garage dei modelli', garageClear:'Svuota', garageEmpty:'Nessuna misura — usa «Prova il modello» per riempire il garage.', garageHint:'Si riempie a ogni test riuscito · clic su una riga = selezionare il modello', favTitle:'Aggiungi / rimuovi preferito', favHint:'Seleziona questo modello e applica le impostazioni consigliate', testPromptPh:'Il tuo prompt di prova (vuoto = presentazione automatica)', autoStart:"Riavvia l'ultimo modello all'avvio", dlTitle:'Scarica un GGUF (URL HuggingFace)', dlBtn:'Scarica', dlCancelBtn:'Annulla', dlExists:'già presente: {n}', dlSpace:'spazio su disco insufficiente', dlBadUrl:'URL non valido — serve un link https diretto a un .gguf', dlNetErr:'download fallito (rete?) — riprova', dlDone:'✓ {n} scaricato — ora è nella lista', dlCancelled:'download annullato', gpuHot:'GPU molto calda', predOver:'Rischio di sforare la VRAM — riduci il contesto o usa una quantizzazione più piccola', predMoe:'modello grande: esperti in RAM (--cpu-moe auto)' });
+  Object.assign(I18N.pt, { garage:'Garagem de modelos', garageClear:'Esvaziar', garageEmpty:'Sem medições — usa «Testar o modelo» para encher a garagem.', garageHint:'Preenchida a cada teste bem-sucedido · clique numa linha = selecionar o modelo', favTitle:'Adicionar / remover favorito', favHint:'Selecionar este modelo e aplicar as definições recomendadas', testPromptPh:'O teu prompt de teste (vazio = apresentação automática)', autoStart:'Relançar o último modelo no arranque', dlTitle:'Transferir um GGUF (URL HuggingFace)', dlBtn:'Transferir', dlCancelBtn:'Cancelar', dlExists:'já existe: {n}', dlSpace:'espaço em disco insuficiente', dlBadUrl:'URL inválido — é preciso um link https direto para um .gguf', dlNetErr:'transferência falhou (rede?) — tenta de novo', dlDone:'✓ {n} transferido — já está na lista', dlCancelled:'transferência cancelada', gpuHot:'GPU muito quente', predOver:'Risco de exceder a VRAM — reduz o contexto ou usa uma quantização menor', predMoe:'modelo grande: experts na RAM (--cpu-moe auto)' });
+  Object.assign(I18N.nl, { garage:'Modellengarage', garageClear:'Leegmaken', garageEmpty:'Nog geen metingen — gebruik "Model testen" om de garage te vullen.', garageHint:'Gevuld bij elke geslaagde test · klik op een rij = dat model selecteren', favTitle:'Favoriet toevoegen / verwijderen', favHint:'Dit model selecteren en aanbevolen instellingen toepassen', testPromptPh:'Jouw testprompt (leeg = automatische introductie)', autoStart:'Laatste model opnieuw starten bij opstarten', dlTitle:'GGUF downloaden (HuggingFace-URL)', dlBtn:'Downloaden', dlCancelBtn:'Annuleren', dlExists:'bestaat al: {n}', dlSpace:'onvoldoende schijfruimte', dlBadUrl:'ongeldige URL — directe https-link naar een .gguf vereist', dlNetErr:'download mislukt (netwerk?) — probeer opnieuw', dlDone:'✓ {n} gedownload — staat nu in de lijst', dlCancelled:'download geannuleerd', gpuHot:'GPU erg heet', predOver:'Risico op VRAM-overloop — verlaag de context of kies een kleinere quant', predMoe:'groot model: experts in RAM (--cpu-moe auto)' });
+  Object.assign(I18N.ru, { garage:'Гараж моделей', garageClear:'Очистить', garageEmpty:'Нет измерений — нажмите «Проверить модель», чтобы заполнить гараж.', garageHint:'Заполняется при каждом успешном тесте · клик по строке = выбрать модель', favTitle:'Добавить / убрать из избранного', favHint:'Выбрать эту модель и применить рекомендуемые настройки', testPromptPh:'Ваш тестовый промпт (пусто = автопредставление)', autoStart:'Перезапускать последнюю модель при старте', dlTitle:'Скачать GGUF (URL HuggingFace)', dlBtn:'Скачать', dlCancelBtn:'Отмена', dlExists:'уже есть: {n}', dlSpace:'недостаточно места на диске', dlBadUrl:'неверный URL — нужна прямая https-ссылка на .gguf', dlNetErr:'сбой загрузки (сеть?) — повторите', dlDone:'✓ {n} скачан — уже в списке', dlCancelled:'загрузка отменена', gpuHot:'GPU сильно нагрет', predOver:'Риск переполнения VRAM — уменьшите контекст или возьмите меньшую квантизацию', predMoe:'крупная модель: эксперты в RAM (--cpu-moe авто)' });
+  Object.assign(I18N.zh, { garage:'模型车库', garageClear:'清空', garageEmpty:'暂无测量数据 — 点击"测试模型"来填充车库。', garageHint:'每次测试成功后记录 · 点击行 = 选择该模型', favTitle:'添加 / 移除收藏', favHint:'选择此模型并应用推荐设置', testPromptPh:'你的测试提示词（留空 = 自动介绍）', autoStart:'启动时重新加载上次的模型', dlTitle:'下载 GGUF（HuggingFace 链接）', dlBtn:'下载', dlCancelBtn:'取消', dlExists:'已存在：{n}', dlSpace:'磁盘空间不足', dlBadUrl:'链接无效 — 需要指向 .gguf 的 https 直链', dlNetErr:'下载失败（网络？）— 请重试', dlDone:'✓ {n} 已下载 — 已加入列表', dlCancelled:'下载已取消', gpuHot:'GPU 温度过高', predOver:'VRAM 可能溢出 — 降低上下文或选择更小的量化', predMoe:'大模型：专家放入内存（自动 --cpu-moe）' });
+  Object.assign(I18N.ja, { garage:'モデルガレージ', garageClear:'クリア', garageEmpty:'測定なし —「モデルをテスト」でガレージに記録されます。', garageHint:'テスト成功ごとに記録 · 行をクリック = そのモデルを選択', favTitle:'お気に入りに追加 / 削除', favHint:'このモデルを選択して推奨設定を適用', testPromptPh:'テスト用プロンプト（空 = 自動自己紹介）', autoStart:'起動時に前回のモデルを再起動', dlTitle:'GGUF をダウンロード（HuggingFace URL）', dlBtn:'ダウンロード', dlCancelBtn:'キャンセル', dlExists:'すでに存在：{n}', dlSpace:'ディスク容量不足', dlBadUrl:'無効な URL — .gguf への https 直リンクが必要', dlNetErr:'ダウンロード失敗（ネットワーク？）— 再試行', dlDone:'✓ {n} ダウンロード完了 — リストに追加済み', dlCancelled:'ダウンロード中止', gpuHot:'GPU が高温', predOver:'VRAM あふれの恐れ — コンテキストを下げるか小さい量子化を', predMoe:'大型モデル：エキスパートを RAM へ（--cpu-moe 自動）' });
   let LANG = 'en';
   const tr = k => { const d = I18N[LANG] || I18N.en; return d[k] != null ? d[k] : (I18N.en[k] != null ? I18N.en[k] : k); };
 
@@ -470,9 +551,11 @@
     const ody = !s ? '…' : (s.odyUp ? tr('odyOnline') : tr('odyOffline'));
     $('ody-status').textContent = 'Odysseus : ' + ody;
     $('ody-led').className = 'led' + (s && s.odyUp ? '' : ' off');
-    const vu=(s&&s.vramU)||0, vt=(s&&s.vramT)||0, pct=vt?Math.round(vu/vt*100):0;
-    const vf=$('vram-fill'); if(vf){ vf.style.width=pct+'%'; vf.className='vram-fill'+(pct>=90?' hot':(pct>=75?' warn':'')); }
-    const vx=$('vram-txt'); if(vx) vx.textContent = vt ? ('VRAM '+vu+' / '+vt+' Mo · '+pct+'%') : 'VRAM —';
+    const vu=(s&&s.vramU)||0, vt=(s&&s.vramT)||0, pct=vt?Math.round(vu/vt*100):0, gt=(s&&s.gpuT)||0;
+    const hot=gt>=83;
+    const vf=$('vram-fill'); if(vf){ vf.style.width=pct+'%'; vf.className='vram-fill'+((hot||pct>=90)?' hot':(pct>=75?' warn':'')); }
+    const vx=$('vram-txt'); if(vx){ vx.textContent = vt ? ('VRAM '+vu+' / '+vt+' Mo · '+pct+'%'+(gt?(' · '+gt+'°C'+(hot?' 🔥':'')):'')) : 'VRAM —'; vx.title = hot?tr('gpuHot'):''; }
+    try{ predVram(); }catch(e){}
   }
 
   function applyLang(lang){
@@ -486,6 +569,7 @@
       const sel = $('model'); if (sel) { sel.innerHTML=''; const o=document.createElement('option'); o.textContent=tr('noModels'); sel.appendChild(o); }
     }
     syncLog(); syncTest();   // libelles afficher/masquer des toggles (pas de data-i18n, etat dynamique)
+    try{ if(DLBUSY && $('dl-btn')) $('dl-btn').textContent=tr('dlCancelBtn'); }catch(e){}
     renderStatus();
     renderVer();   // la ligne version llama + son bouton sont dynamiques (pas de data-i18n)
     try { localStorage.setItem('ody-dash-lang', lang); } catch(e){}
@@ -503,6 +587,7 @@
     ts.textContent = 'input[type=range]::-webkit-slider-thumb{background:'+t.fg+';box-shadow:0 0 6px '+t.fg+'}input[type=range]::-moz-range-thumb{background:'+t.fg+'}::-webkit-scrollbar-thumb{background:'+t.border+'}';
     applyBgEffectColor(''); applyBgEffectIntensity(t.bgEffectIntensity!=null?t.bgEffectIntensity:1); applyBgEffectSpeed(t.bgEffectSpeed!=null?t.bgEffectSpeed:1); applyBgPattern(t.bgPattern || PATTERN[name] || 'none');
     try { localStorage.setItem('ody-dash-theme', name); } catch(e){}
+    try { drawSpark(); } catch(e){}   // la couleur du sparkline suit le theme
   }
   const tsel = $('theme-select');
   function rebuildThemes(){
@@ -614,6 +699,7 @@
     setSlider('s-minp','v-minp',m.mp,2); setSlider('s-rep','v-rep',m.rp,2);
     $('ctx').value = m.ctx; $('ngl').value = 99; $('port').value = 8000;
     updateCmd(); checkCtx();
+    try{ syncStar(); predVram(); }catch(e){}
   }
   function modelB(name){ const mm=(name||'').toLowerCase().match(/(\d+(?:\.\d+)?)\s*b/); let b=mm?parseFloat(mm[1]):0; if(!b && /nemo/.test((name||'').toLowerCase())) b=12; return b; }
   function checkCtx(){
@@ -634,6 +720,7 @@
 
   // PS -> JS : liste des modèles
   window.dashInit = function(data){
+    const prevName = (MODELS[$('model').value]||{}).name;   // re-scan (ex: fin de download) -> on garde la selection
     MODELS = (data && data.models) || []; EXE = (data && data.exe) || 'llama-server'; _scanned = true;
     const sel = $('model'); sel.innerHTML = '';
     if (!MODELS.length){ const o=document.createElement('option'); o.textContent=tr('noModels'); sel.appendChild(o); $('fam').textContent=''; $('cmd').textContent='—'; return; }
@@ -648,10 +735,16 @@
       items.forEach(x=>og.appendChild(_mkOpt(x[0],x[1])));
       sel.appendChild(og);
     });
-    sel.value = 0; applyPreset(0);
+    let idx = 0, kept = false;
+    if (prevName){ const f = MODELS.findIndex(m=>m.name===prevName); if (f>=0){ idx=f; kept=true; } }
+    sel.value = idx;
+    if (kept){ $('fam').textContent=MODELS[idx].family; updateCmd(); checkCtx(); try{ syncStar(); predVram(); }catch(e){} }
+    else applyPreset(idx);
+    try{ renderFavs(); }catch(e){}
+    _gotInit = true; try{ autoStartTry(); }catch(e){}
   };
   // PS -> JS : statut LLM + Odysseus (textes reconstruits selon la langue à partir des booléens)
-  window.dashStatus = function(s){ if (s) lastStatus = s; renderStatus(); };
+  window.dashStatus = function(s){ if (s){ lastStatus = s; _gotStatus = true; } renderStatus(); try{ autoStartTry(); }catch(e){} };
   // PS -> JS : réponse du test
   window.dashTest = function(s){ if (s && s.test) { var k={'__TESTING__':'testing','__TEST_NOSERVER__':'testNoServer','__TEST_EMPTY__':'testEmpty'}[s.test]; $('test-out').textContent = k ? tr(k) : s.test; $('test-out').hidden=false; syncTest(); } };
   // PS -> JS : logs llama-server (sans terminal)
@@ -748,13 +841,15 @@
     if (act === 'reco') { applyPreset(+$('model').value); }
     else if (act === 'launch') {
       const m = MODELS[$('model').value]; if (!m) { $('llm-status').textContent = 'LLM : ' + tr('pickModel'); return; }
-      send({ type:'launch', path:m.path, ngl:g('ngl'), ctx:g('ctx'), temp:g('s-temp'), topp:g('s-topp'),
-             topk:g('s-topk'), minp:g('s-minp'), rep:g('s-rep'), port:g('port'), fast:$('fast').checked });
+      const largs = { path:m.path, ngl:g('ngl'), ctx:g('ctx'), temp:g('s-temp'), topp:g('s-topp'),
+             topk:g('s-topk'), minp:g('s-minp'), rep:g('s-rep'), port:g('port'), fast:$('fast').checked };
+      send(Object.assign({ type:'launch' }, largs));
+      try{ localStorage.setItem('ody-dash-lastlaunch', JSON.stringify({ name:m.name, set:curSettings(), args:largs })); }catch(e){}
       $('llm-status').textContent = 'LLM : ' + tr('launching');
       $('llm-log').hidden=false; syncLog();
     }
     else if (act === 'stop') { send({type:'stop'}); $('llm-status').textContent = 'LLM : ' + tr('stopping'); }
-    else if (act === 'test') { send({type:'test', lang: LANG}); $('test-out').hidden=false; syncTest(); $('test-out').textContent = tr('testing'); }
+    else if (act === 'test') { const tp=($('test-prompt')&&$('test-prompt').value||'').trim(); send({type:'test', lang: LANG, prompt: tp}); $('test-out').hidden=false; syncTest(); $('test-out').textContent = tr('testing'); }
     else if (act === 'llama-check') {
       if (VER.st==='available'){ VER={st:'updating'}; renderVer(); send({type:'llama', act:'update'}); }          // 2e clic = confirmation
       else if (VER.st!=='checking' && VER.st!=='updating'){ VER={st:'checking'}; renderVer(); send({type:'llama', act:'check'}); }
@@ -764,6 +859,162 @@
     else if (act === 'ody-update') { send({type:'ody', act:'update'}); }
     else if (act === 'ody-open')   { send({type:'ody', act:'open'}); }
   }));
+
+  // ----- Favoris (chips one-click : selectionne + applique les reglages reco) -----
+  const FKEY='ody-dash-favs';
+  function loadFavs(){ try{ return JSON.parse(localStorage.getItem(FKEY)||'[]')||[]; }catch(e){ return []; } }
+  function saveFavs(a){ try{ localStorage.setItem(FKEY, JSON.stringify(a)); }catch(e){} }
+  function shortName(n){ return (n||'').replace(/\.gguf$/i,'').replace(/[-_.](Q\d[\w]*|IQ\d[\w]*|f16|bf16|fp16|mxfp4)$/i,''); }
+  function syncStar(){ const b=$('fav-toggle'); if(!b) return; const m=MODELS[$('model').value]; const on=!!(m&&loadFavs().indexOf(m.name)>=0); b.textContent=on?'★':'☆'; b.classList.toggle('on',on); }
+  function renderFavs(){
+    const box=$('fav-chips'); if(!box) return;
+    const avail=loadFavs().filter(n=>MODELS.some(m=>m.name===n));
+    box.innerHTML='';
+    if(!avail.length){ box.hidden=true; syncStar(); return; }
+    box.hidden=false;
+    avail.forEach(n=>{
+      const c=document.createElement('button'); c.className='fav-chip'; c.title=tr('favHint'); c.type='button';
+      const s=document.createElement('span'); s.textContent='★ '+shortName(n); c.appendChild(s);
+      c.addEventListener('click', ()=>{ const i=MODELS.findIndex(m=>m.name===n); if(i<0) return; $('model').value=i; applyPreset(i); });
+      box.appendChild(c);
+    });
+    syncStar();
+  }
+  if($('fav-toggle')) $('fav-toggle').addEventListener('click', ()=>{
+    const m=MODELS[$('model').value]; if(!m) return;
+    let f=loadFavs(); if(f.indexOf(m.name)>=0) f=f.filter(x=>x!==m.name); else f.push(m.name);
+    saveFavs(f); renderFavs();
+  });
+
+  // ----- Garage a modeles (mesures auto a chaque test reussi, localStorage) -----
+  const GKEY='ody-dash-garage';
+  function loadGarage(){ try{ return JSON.parse(localStorage.getItem(GKEY)||'{}')||{}; }catch(e){ return {}; } }
+  function saveGarage(o){ try{ localStorage.setItem(GKEY, JSON.stringify(o)); }catch(e){} }
+  function renderGarage(){
+    const w=$('garage-wrap'); if(!w) return; const g=loadGarage();
+    const ks=Object.keys(g).sort((a,b)=>((g[b]&&g[b].tps)||0)-((g[a]&&g[a].tps)||0));
+    if(!ks.length){ w.innerHTML='<div style="opacity:.6;font-size:12px;padding:10px 2px">'+tr('garageEmpty')+'</div>'; return; }
+    const t=document.createElement('table'); t.className='garage';
+    t.innerHTML='<thead><tr><th></th><th>tok/s</th><th>VRAM</th><th>📅</th></tr></thead>';
+    const tb=document.createElement('tbody');
+    ks.forEach(k=>{ const e=g[k]||{}; const trw=document.createElement('tr'); trw.className='g-row'; trw.title=k;
+      const d=e.date?new Date(e.date):null; const ds=d?(('0'+d.getDate()).slice(-2)+'/'+('0'+(d.getMonth()+1)).slice(-2)):'—';
+      const td=(txt,cls)=>{ const c=document.createElement('td'); if(cls)c.className=cls; c.textContent=txt; return c; };
+      trw.appendChild(td(shortName(k),'g-name'));
+      const tdT=td(e.tps!=null?String(e.tps):'—'); tdT.style.fontWeight='600'; trw.appendChild(tdT);
+      trw.appendChild(td(e.vram?(e.vram+' Mo'):'—'));
+      trw.appendChild(td(ds));
+      trw.addEventListener('click', ()=>{ const i=MODELS.findIndex(m=>m.name===k); if(i>=0){ $('model').value=i; applyPreset(i); closeGarage(); } });
+      tb.appendChild(trw); });
+    t.appendChild(tb); w.innerHTML=''; w.appendChild(t);
+  }
+  const gmod=$('garage-modal');
+  function openGarage(){ renderGarage(); gmod.hidden=false; }
+  function closeGarage(){ gmod.hidden=true; }
+  if($('garage-btn')) $('garage-btn').addEventListener('click', openGarage);
+  $('garage-close').addEventListener('click', closeGarage);
+  $('garage-clear').addEventListener('click', ()=>{ saveGarage({}); try{ localStorage.removeItem(SKEY); }catch(e){} renderGarage(); drawSpark(); });
+  let _gmDown2=false; gmod.addEventListener('mousedown', e=>{ _gmDown2=(e.target===gmod); });
+  gmod.addEventListener('click', e=>{ if(e.target===gmod && _gmDown2) closeGarage(); });
+
+  // ----- Chrono du test (meta poussee par le backend) -> badge + garage + sparkline -----
+  const SKEY='ody-dash-tpshist';
+  function loadHist(){ try{ return JSON.parse(localStorage.getItem(SKEY)||'[]')||[]; }catch(e){ return []; } }
+  function saveHist(a){ try{ localStorage.setItem(SKEY, JSON.stringify(a.slice(-30))); }catch(e){} }
+  window.dashTestMeta = function(m){
+    if(!m || m.tps==null) return;
+    const b=$('test-tps'); if(b) b.textContent='⚡ '+m.tps+' tok/s'+(m.secs!=null?(' · '+m.secs+'s'):'');
+    const mid=String(m.model||'').toLowerCase();
+    const mm=MODELS.find(x=>shortName(x.name).toLowerCase()===mid);
+    const key=mm?mm.name:(m.model?String(m.model)+'.gguf':null);
+    if(key){ const g=loadGarage(); g[key]={ tps:m.tps, vram:(lastStatus&&lastStatus.vramU)||0, date:Date.now() }; saveGarage(g); }
+    const h=loadHist(); h.push(m.tps); saveHist(h); drawSpark();
+  };
+
+  // ----- Sparkline (historique tok/s, couleur du theme) -----
+  function drawSpark(){
+    const cv=$('tps-spark'); if(!cv) return; const h=loadHist();
+    if(h.length<2){ cv.hidden=true; return; }
+    cv.hidden=false;
+    const W=cv.width=Math.max(60,Math.round(cv.getBoundingClientRect().width||(cv.parentElement?cv.parentElement.clientWidth:200)||200));
+    const H=cv.height=34;
+    const c=cv.getContext('2d'); c.clearRect(0,0,W,H);
+    const mx=Math.max.apply(null,h), mn=Math.min.apply(null,h), span=(mx-mn)||1;
+    const fg=(getComputedStyle(document.documentElement).getPropertyValue('--fg')||'#9cdef2').trim();
+    c.strokeStyle=fg; c.lineWidth=1.5; c.globalAlpha=.9; c.beginPath();
+    h.forEach((v,i)=>{ const x=4+i*(W-8)/(h.length-1), y=H-5-((v-mn)/span)*(H-13); if(i)c.lineTo(x,y); else c.moveTo(x,y); });
+    c.stroke();
+    const lv=h[h.length-1], ly=H-5-((lv-mn)/span)*(H-13);
+    c.fillStyle=fg; c.beginPath(); c.arc(W-4,ly,2.5,0,7); c.fill();
+    c.globalAlpha=.45; c.font='9px "Fira Code",monospace'; c.textBaseline='top'; c.fillText(String(mx),4,1);
+  }
+
+  // ----- Jauge VRAM predictive (taille GGUF + contexte vs VRAM totale) -----
+  function predVram(){
+    const el=$('vram-pred'); if(el==null) return; const m=MODELS[$('model').value];
+    if(!m || !m.size){ el.textContent=''; el.title=''; return; }
+    const gb=m.size/1073741824;
+    if(gb>10){ el.textContent='🧠 --cpu-moe'; el.className='pred-warn'; el.title=tr('predMoe'); return; }
+    const ctxv=+$('ctx').value||8192;
+    const capMo=(lastStatus&&lastStatus.vramT)||12288, cap=capMo/1024;
+    const est=gb*1.10 + (ctxv/8192)*Math.max(0.9, gb*0.16);
+    const ratio=est/cap;
+    el.textContent='≈ '+est.toFixed(1)+' / '+cap.toFixed(0)+' Go'+(ratio>=1?' 🔴':(ratio>=0.86?' ⚠️':' ✓'));
+    el.className=ratio>=1?'pred-hot':(ratio>=0.86?'pred-warn':'pred-ok');
+    el.title=ratio>=0.86?tr('predOver'):'';
+  }
+
+  // ----- Prompt de test perso (persistant) -----
+  const TPKEY='ody-dash-testprompt';
+  const tpin=$('test-prompt');
+  if(tpin){ try{ tpin.value=localStorage.getItem(TPKEY)||''; }catch(e){}
+    tpin.addEventListener('input', ()=>{ try{ localStorage.setItem(TPKEY, tpin.value); }catch(e){} }); }
+
+  // ----- Auto-start : relancer le dernier modele au demarrage (si aucun serveur deja up) -----
+  const ASKEY='ody-dash-autostart', LLKEY='ody-dash-lastlaunch';
+  let _gotInit=false, _gotStatus=false, _asDone=false;
+  const aswitch=$('autostart');
+  if(aswitch){ try{ aswitch.checked = localStorage.getItem(ASKEY)==='1'; }catch(e){}
+    aswitch.addEventListener('change', ()=>{ try{ localStorage.setItem(ASKEY, aswitch.checked?'1':'0'); }catch(e){} }); }
+  function autoStartTry(){
+    if(_asDone || !_gotInit || !_gotStatus) return; _asDone=true;
+    try{
+      if(localStorage.getItem(ASKEY)!=='1') return;
+      if(lastStatus && lastStatus.llmUp) return;            // un serveur tourne deja : on ne le tue pas
+      const ll=JSON.parse(localStorage.getItem(LLKEY)||'null'); if(!ll||!ll.name||!ll.args) return;
+      const i=MODELS.findIndex(m=>m.name===ll.name); if(i<0) return;
+      $('model').value=i; applyPreset(i); if(ll.set) applySettings(ll.set);
+      setTimeout(()=>{ send(Object.assign({type:'launch'}, ll.args)); $('llm-status').textContent='LLM : '+tr('launching'); $('llm-log').hidden=false; syncLog(); }, 900);
+    }catch(e){}
+  }
+
+  // ----- Telechargeur GGUF (backend = runspace dedie, progression via dashDl) -----
+  let DLBUSY=false;
+  function dlMsg(t,cls){ const e=$('dl-msg'); if(e){ e.textContent=t||''; e.style.color = cls==='err'?'var(--red)':(cls==='ok'?'#5dd35d':''); } }
+  if($('dl-btn')) $('dl-btn').addEventListener('click', ()=>{
+    if(DLBUSY){ send({type:'dl', act:'cancel'}); return; }
+    const u=($('dl-url').value||'').trim(); if(!u){ $('dl-url').focus(); return; }
+    DLBUSY=true; $('dl-btn').textContent=tr('dlCancelBtn'); $('dl-bar').hidden=false; $('dl-fill').style.width='0%'; dlMsg('…');
+    send({type:'dl', act:'start', url:u});
+  });
+  window.dashDl = function(d){
+    if(!d||!d.state) return;
+    if(d.state==='dl'){
+      DLBUSY=true; $('dl-btn').textContent=tr('dlCancelBtn'); $('dl-bar').hidden=false;
+      if(d.pct>=0){ $('dl-fill').style.width=Math.min(100,d.pct)+'%'; dlMsg(d.pct+'% · '+d.mb+' / '+d.mbTot+' Mo · '+d.mbps+' Mo/s'); }
+      else dlMsg(d.mb+' Mo · '+d.mbps+' Mo/s');
+      return;
+    }
+    DLBUSY=false; $('dl-btn').textContent=tr('dlBtn'); $('dl-bar').hidden=true;
+    if(d.state==='done'){ dlMsg(tr('dlDone').replace('{n}', d.name||''),'ok'); $('dl-url').value=''; }
+    else if(d.state==='exists') dlMsg(tr('dlExists').replace('{n}', d.name||''),'err');
+    else if(d.state==='space') dlMsg(tr('dlSpace'),'err');
+    else if(d.state==='badurl') dlMsg(tr('dlBadUrl'),'err');
+    else if(d.state==='cancelled') dlMsg(tr('dlCancelled'));
+    else dlMsg(tr('dlNetErr'),'err');
+  };
+
+  renderFavs(); drawSpark();
 
   // ----- Langue (sélecteur) -----
   const lsel = $('lang-select');

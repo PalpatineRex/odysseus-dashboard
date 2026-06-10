@@ -131,7 +131,7 @@ function Get-DefaultCtx([string]$name){ $n=$name.ToLower(); $b=0.0
   return 16384 }
 function Scan-Models{ $list=@(); foreach($d in $SCANDIRS){ if(Test-Path $d){
   Get-ChildItem -Path $d -Recurse -Filter *.gguf -EA SilentlyContinue | ForEach-Object {
-    if($_.Name -notmatch '(?i)mmproj'){ $list += [PSCustomObject]@{ Name=$_.Name; Path=$_.FullName } } } } }
+    if($_.Name -notmatch '(?i)mmproj'){ $list += [PSCustomObject]@{ Name=$_.Name; Path=$_.FullName; Size=[long]$_.Length } } } } }
   return $list | Sort-Object Name -Unique }
 $models=@(Scan-Models)
 DLog "scan: $($models.Count) modeles"
@@ -139,7 +139,8 @@ DLog "scan: $($models.Count) modeles"
 # etat partage + runspace polling (I/O hors thread UI)
 $S=[hashtable]::Synchronized(@{ ody='Odysseus : ...'; odyUp=$false; llm='LLM : ...'; llmUp=$false
   testReq=$false; testBusy=$false; testOut=''; testLang='fr'; vramU=0; vramT=0; run=$true; exe=$EXE; launchReq=$false; launchArgs=@(); stopReq=$false; llmLog=''; llmLogFile=$LLMLOG; errLogFile=$ERRLOG; outLogFile=$OUTLOG
-  llamaReq=''; llamaPush=''; llamaSeq=0; updScript='C:\Odysseus\Update-LlamaServer.ps1' })
+  llamaReq=''; llamaPush=''; llamaSeq=0; updScript='C:\Odysseus\Update-LlamaServer.ps1'
+  testPrompt=''; testMeta=''; testSeq=0; gpuT=0; dlReq=''; dlCancel=$false; dlState=''; dlSeq=0 })
 $pollRs=[runspacefactory]::CreateRunspace(); $pollRs.ApartmentState='MTA'; $pollRs.ThreadOptions='ReuseThread'; $pollRs.Open()
 $pollRs.SessionStateProxy.SetVariable('S',$S)
 $pollPs=[powershell]::Create(); $pollPs.Runspace=$pollRs
@@ -155,7 +156,7 @@ $pollPs=[powershell]::Create(); $pollPs.Runspace=$pollRs
       $psi.Arguments='--query-gpu=memory.used,memory.total,temperature.gpu --format=csv,noheader,nounits'
       $psi.RedirectStandardOutput=$true; $psi.UseShellExecute=$false; $psi.CreateNoWindow=$true
       $pr=[System.Diagnostics.Process]::Start($psi); $o=$pr.StandardOutput.ReadToEnd(); $pr.WaitForExit()
-      $aa=($o.Trim() -split ','); if($aa.Count -ge 3){ $S.vramU=[int]($aa[0].Trim()); $S.vramT=[int]($aa[1].Trim()); $vram="  |  VRAM $($aa[0].Trim())/$($aa[1].Trim()) Mo  $($aa[2].Trim())C" } }catch{}
+      $aa=($o.Trim() -split ','); if($aa.Count -ge 3){ $S.vramU=[int]($aa[0].Trim()); $S.vramT=[int]($aa[1].Trim()); $S.gpuT=[int]($aa[2].Trim()); $vram="  |  VRAM $($aa[0].Trim())/$($aa[1].Trim()) Mo  $($aa[2].Trim())C" } }catch{}
     try{ $m=Invoke-RestMethod -Uri 'http://127.0.0.1:8000/v1/models' -TimeoutSec 1
       $nm=($m.data | Select-Object -First 1).id
       $S.llm="$nm @ :8000$vram"; $S.llmUp=$true
@@ -171,18 +172,33 @@ $pollPs=[powershell]::Create(); $pollPs.Runspace=$pollRs
         $langMap=@{ fr='French'; en='English'; es='Spanish'; de='German'; it='Italian'; pt='Portuguese'; nl='Dutch'; ru='Russian'; zh='Chinese'; ja='Japanese' }
         $lc=([string]$S.testLang).ToLower().Trim(); if(-not $lc){ $lc='fr' }
         $lang=$langMap[$lc]; if(-not $lang){ $lang='French' }
-        $sys="You are $mid, a local AI model served via llama.cpp and tested from the Odysseus dashboard. Speak in the first person, be truthful about your identity, and never claim to be a different model. Answer immediately and directly - do not think out loud, deliberate, plan, or show any reasoning, drafts, headings or word counts. Output only the finished introduction."
-        $usr="Give a detailed, first-person self-introduction in $lang. In about 6 sentences total, cover concretely and in flowing prose: who you are and your model family; what you can genuinely do, with your real strengths and capabilities; and the kinds of tasks you are best suited for and why. Be substantial but do not write a novel, do not pad, and do not list constraints. Write the whole introduction between the markers <<INTRO>> and <</INTRO>> and put nothing else between them."
+        # prompt perso (champ "Réponse du test") : s'il est rempli, on l'envoie tel quel ; sinon presentation auto
+        $cp=([string]$S.testPrompt).Trim()
+        if($cp){
+          $sys="You are $mid, a local AI model served via llama.cpp, tested from the Odysseus dashboard. Be truthful about your identity. Answer the user directly and helpfully in the language of their message - do not think out loud or show any reasoning."
+          $usr=$cp
+        } else {
+          $sys="You are $mid, a local AI model served via llama.cpp and tested from the Odysseus dashboard. Speak in the first person, be truthful about your identity, and never claim to be a different model. Answer immediately and directly - do not think out loud, deliberate, plan, or show any reasoning, drafts, headings or word counts. Output only the finished introduction."
+          $usr="Give a detailed, first-person self-introduction in $lang. In about 6 sentences total, cover concretely and in flowing prose: who you are and your model family; what you can genuinely do, with your real strengths and capabilities; and the kinds of tasks you are best suited for and why. Be substantial but do not write a novel, do not pad, and do not list constraints. Write the whole introduction between the markers <<INTRO>> and <</INTRO>> and put nothing else between them."
+        }
         $body=@{ messages=@(@{role='system';content=$sys},@{role='user';content=$usr}); max_tokens=1536; chat_template_kwargs=@{ enable_thinking=$false } } | ConvertTo-Json -Depth 6
         $sw=[System.Diagnostics.Stopwatch]::StartNew()
         $r=Invoke-RestMethod -Uri 'http://127.0.0.1:8000/v1/chat/completions' -Method Post -ContentType 'application/json' -Body $body -TimeoutSec 150
         $sw.Stop(); $mm=$r.choices[0].message; $msg=("$($mm.content)").Trim(); if(-not $msg){ $msg=("$($mm.reasoning_content)").Trim() }
         $msg=[regex]::Replace($msg,'(?is)<think>.*?</think>','').Trim()
-        $mk=[regex]::Matches($msg,'(?is)<<INTRO>>(.*?)<</INTRO>>')
-        if($mk.Count -gt 0){ $msg=$mk[$mk.Count-1].Groups[1].Value.Trim() } elseif($msg -match '(?is)<<INTRO>>(.*)$'){ $msg=$Matches[1].Trim() }
-        $msg=[regex]::Replace($msg,'(?is)<+\s*/?\s*INTRO\s*>+','').Trim()
+        if(-not $cp){   # les marqueurs <<INTRO>> n'existent que pour la presentation auto
+          $mk=[regex]::Matches($msg,'(?is)<<INTRO>>(.*?)<</INTRO>>')
+          if($mk.Count -gt 0){ $msg=$mk[$mk.Count-1].Groups[1].Value.Trim() } elseif($msg -match '(?is)<<INTRO>>(.*)$'){ $msg=$Matches[1].Trim() }
+          $msg=[regex]::Replace($msg,'(?is)<+\s*/?\s*INTRO\s*>+','').Trim()
+        }
         $tps=[math]::Round([double]$r.timings.predicted_per_second,1)
-        if(-not $msg){ $S.testOut='__TEST_EMPTY__' } else { $S.testOut="$msg`r`n`r`n[$mid - $tps tok/s - $([math]::Round($sw.Elapsed.TotalSeconds,1))s]" }
+        if(-not $msg){ $S.testOut='__TEST_EMPTY__' } else {
+          $S.testOut="$msg`r`n`r`n[$mid - $tps tok/s - $([math]::Round($sw.Elapsed.TotalSeconds,1))s]"
+          # meta structuree -> garage / sparkline cote JS
+          $S.testSeq=[int]$S.testSeq+1
+          try{ $S.testMeta=(@{ tps=$tps; pps=[math]::Round([double]$r.timings.prompt_per_second,0); n=[int]$r.timings.predicted_n
+            secs=[math]::Round($sw.Elapsed.TotalSeconds,1); model=$mid; seq=[int]$S.testSeq } | ConvertTo-Json -Compress) }catch{}
+        }
       }catch{ $S.testOut='__TEST_NOSERVER__' }
       $S.testBusy=$false }
     Start-Sleep -Milliseconds 600
@@ -237,15 +253,76 @@ $updPs=[powershell]::Create(); $updPs.Runspace=$updRs
 })
 [void]$updPs.BeginInvoke()
 
+# runspace DEDIE telechargement GGUF (URL HuggingFace -> data\local) : progression via $S.dlState,
+# annulable ($S.dlCancel), fichier .part renomme a la fin seulement (jamais de gguf corrompu visible).
+$dlRs=[runspacefactory]::CreateRunspace(); $dlRs.ApartmentState='MTA'; $dlRs.ThreadOptions='ReuseThread'; $dlRs.Open()
+$dlRs.SessionStateProxy.SetVariable('S',$S)
+$dlPs=[powershell]::Create(); $dlPs.Runspace=$dlRs
+[void]$dlPs.AddScript({
+  try{ Add-Type -AssemblyName System.Net.Http }catch{}
+  function _push($st,$extra){ $o=@{ state=$st; seq=[int]$S.dlSeq }; if($extra){ foreach($k in $extra.Keys){ $o[$k]=$extra[$k] } }; $S.dlState=($o | ConvertTo-Json -Compress) }
+  while($S.run){
+    if($S.dlReq){
+      $url=[string]$S.dlReq; $S.dlReq=''; $S.dlCancel=$false; $S.dlSeq=[int]$S.dlSeq+1
+      $name=''; $u=$null
+      try{ $u=[Uri]$url; $name=[System.IO.Path]::GetFileName($u.AbsolutePath) }catch{}
+      if(-not $u -or $u.Scheme -ne 'https' -or $name -notmatch '(?i)\.gguf$'){ _push 'badurl' $null }
+      else{
+        $dest=Join-Path 'C:\Odysseus\data\local' $name
+        if(Test-Path -LiteralPath $dest){ _push 'exists' @{ name=$name } }
+        else{
+          $tmp="$dest.part"
+          try{
+            $hc=New-Object System.Net.Http.HttpClient
+            $hc.Timeout=[System.Threading.Timeout]::InfiniteTimeSpan
+            try{ $hc.DefaultRequestHeaders.UserAgent.ParseAdd('OdysseusDashboard/1.0') }catch{}
+            $resp=$hc.GetAsync($url,[System.Net.Http.HttpCompletionOption]::ResponseHeadersRead).Result
+            if(-not $resp.IsSuccessStatusCode){ throw ("HTTP " + [int]$resp.StatusCode) }
+            $tot=[long]0; try{ if($resp.Content.Headers.ContentLength){ $tot=[long]$resp.Content.Headers.ContentLength } }catch{}
+            $free=[long](Get-PSDrive C).Free
+            if($tot -gt 0 -and $free -lt ($tot + 2GB)){ _push 'space' @{ name=$name }; $resp.Dispose(); $hc.Dispose() }
+            else{
+              $in=$resp.Content.ReadAsStreamAsync().Result
+              $out=[System.IO.File]::Create($tmp)
+              $buf=New-Object byte[] (1MB); $done=[long]0
+              $swd=[System.Diagnostics.Stopwatch]::StartNew(); $lastMs=0.0; $lastB=[long]0
+              _push 'dl' @{ name=$name; pct=0; mb=0; mbTot=[math]::Round($tot/1MB,0); mbps=0 }
+              while($true){
+                if($S.dlCancel){ break }
+                $n=$in.Read($buf,0,$buf.Length); if($n -le 0){ break }
+                $out.Write($buf,0,$n); $done+=$n
+                $ms=$swd.Elapsed.TotalMilliseconds
+                if(($ms-$lastMs) -gt 450){
+                  $mbps=[math]::Round((($done-$lastB)/1MB)/(($ms-$lastMs)/1000.0),1); $lastMs=$ms; $lastB=$done
+                  $pct = if($tot -gt 0){ [math]::Round($done*100.0/$tot,1) } else { -1 }
+                  _push 'dl' @{ name=$name; pct=$pct; mb=[math]::Round($done/1MB,0); mbTot=[math]::Round($tot/1MB,0); mbps=$mbps }
+                }
+              }
+              $out.Close(); try{ $in.Dispose(); $resp.Dispose(); $hc.Dispose() }catch{}
+              if($S.dlCancel){ try{ Remove-Item -LiteralPath $tmp -Force }catch{}; _push 'cancelled' @{ name=$name } }
+              elseif($tot -gt 0 -and $done -lt $tot){ try{ Remove-Item -LiteralPath $tmp -Force }catch{}; _push 'neterr' @{ name=$name } }
+              else{ Move-Item -Force -LiteralPath $tmp -Destination $dest; _push 'done' @{ name=$name; mb=[math]::Round($done/1MB,0) } }
+            }
+          }catch{ try{ if(Test-Path -LiteralPath $tmp){ Remove-Item -LiteralPath $tmp -Force } }catch{}; _push 'neterr' @{ name=$name } }
+        }
+      }
+    }
+    Start-Sleep -Milliseconds 250
+  }
+})
+[void]$dlPs.BeginInvoke()
+
 # push PS -> JS
 $script:wvReady=$false
 $script:lastTest=''
 $script:lastLog=''
 $script:lastLlama=''
+$script:lastMeta=''
+$script:lastDl=''
 function JsCall($js){ if($script:wvReady -and $script:core){ try{ [void]$script:core.ExecuteScriptAsync($js) }catch{} } }
 function Push-Init{
   $arr=@(); foreach($m in $models){ $fam=Get-Family $m.Name; $p=$PRESETS[$fam]; if(-not $p){$p=$PRESETS['Defaut']}
-    $arr += @{ name=$m.Name; path=$m.Path; family=$fam; note=$p.note; t=$p.t; p=$p.p; k=$p.k; mp=$p.mp; rp=$p.rp; ctx=(Get-DefaultCtx $m.Name) } }
+    $arr += @{ name=$m.Name; path=$m.Path; size=[long]$m.Size; family=$fam; note=$p.note; t=$p.t; p=$p.p; k=$p.k; mp=$p.mp; rp=$p.rp; ctx=(Get-DefaultCtx $m.Name) } }
   $j=@{ models=$arr; exe=$EXE } | ConvertTo-Json -Depth 6 -Compress
   DLog "push-init: $($arr.Count) modeles vers le HTML (wvReady=$($script:wvReady))"
   JsCall ("window.dashInit && window.dashInit($j)")
@@ -362,7 +439,8 @@ if ($script:wvOK) {
               try{ Start-Process -FilePath $EXE -ArgumentList $aa -WindowStyle Hidden -RedirectStandardOutput $OUTLOG -RedirectStandardError $ERRLOG; DLog "launched (hidden+logfile)" }catch{ DLog ("launch err: " + $_.Exception.Message) }
             }
             'stop' { try{ Stop-Process -Name 'llama-server' -Force -EA SilentlyContinue }catch{}; DLog "stopped" }
-            'test' { $S.testLang = [string]$msg.lang; $S.testReq = $true }
+            'test' { $S.testLang = [string]$msg.lang; $S.testPrompt = [string]$msg.prompt; $S.testReq = $true }
+            'dl'   { if([string]$msg.act -eq 'cancel'){ $S.dlCancel = $true } elseif([string]$msg.url){ $S.dlReq = [string]$msg.url } }
             'llama' { $S.llamaReq = [string]$msg.act }   # check / update -> traite par le runspace updater
             'savetheme' { if(Write-CustomTheme ([string]$msg.name) $msg.colors $false){ Push-CustomThemes } }
             'deltheme'  { if(Write-CustomTheme ([string]$msg.name) $null $true){ Push-CustomThemes } }
@@ -392,12 +470,21 @@ $uiTimer = New-Object System.Windows.Forms.Timer
 $uiTimer.Interval = 600
 $uiTimer.add_Tick({
   if (-not $script:wvReady) { return }
-  $payload = @{ ody=[string]$S.ody; odyUp=[bool]$S.odyUp; llm=[string]$S.llm; llmUp=[bool]$S.llmUp; vramU=[int]$S.vramU; vramT=[int]$S.vramT } | ConvertTo-Json -Compress
+  $payload = @{ ody=[string]$S.ody; odyUp=[bool]$S.odyUp; llm=[string]$S.llm; llmUp=[bool]$S.llmUp; vramU=[int]$S.vramU; vramT=[int]$S.vramT; gpuT=[int]$S.gpuT } | ConvertTo-Json -Compress
   JsCall ("window.dashStatus && window.dashStatus($payload)")
   if ($S.testOut -ne $script:lastTest) {
     $script:lastTest = $S.testOut
     $tj = @{ test=[string]$S.testOut } | ConvertTo-Json -Compress
     JsCall ("window.dashTest && window.dashTest($tj)")
+  }
+  if ($S.testMeta -and $S.testMeta -ne $script:lastMeta) {
+    $script:lastMeta = $S.testMeta
+    JsCall ("window.dashTestMeta && window.dashTestMeta($($S.testMeta))")
+  }
+  if ($S.dlState -and $S.dlState -ne $script:lastDl) {
+    $script:lastDl = $S.dlState
+    JsCall ("window.dashDl && window.dashDl($($S.dlState))")
+    if ($S.dlState -match '"state":"done"') { try { $script:models=@(Scan-Models); Push-Init } catch {} }
   }
   if ($S.llmLog -ne $script:lastLog) {
     $script:lastLog = $S.llmLog
@@ -426,3 +513,4 @@ $S.run = $false
 try { Start-Sleep -Milliseconds 250; $pollPs.Dispose(); $pollRs.Close() } catch {}
 try { $logPs.Dispose(); $logRs.Close() } catch {}
 try { $updPs.Dispose(); $updRs.Close() } catch {}
+try { $dlPs.Dispose(); $dlRs.Close() } catch {}
