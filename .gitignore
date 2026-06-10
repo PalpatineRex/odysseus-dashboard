@@ -1,0 +1,7 @@
+# Sauvegarde des SOURCES uniquement
+*.exe
+*.dll
+llama-win/
+_dl/
+Thumbs.db
+desktop.ini

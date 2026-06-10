@@ -1,0 +1,798 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Odysseus Dashboard</title>
+<style>
+  @font-face { font-family:'Fira Code'; src:url('./fonts/FiraCode-Light.woff2') format('woff2'); font-weight:300; font-display:swap; }
+  @font-face { font-family:'Fira Code'; src:url('./fonts/FiraCode-Regular.woff2') format('woff2'); font-weight:400; font-display:swap; }
+  @font-face { font-family:'Fira Code'; src:url('./fonts/FiraCode-SemiBold.woff2') format('woff2'); font-weight:600; font-display:swap; }
+
+  :root {
+    /* defaults to the "original" Odysseus theme (dark); overridden at runtime by theme.js */
+    --bg:#282c34; --fg:#9cdef2; --panel:#111111; --border:#355a66; --red:#e06c75;
+    --accent:var(--border); --radius:14px; --card-pad:16px;
+  }
+  * { box-sizing:border-box; }
+  html, body { height:100%; margin:0; overflow:hidden; background-color:var(--bg); color:var(--fg);
+    font-family:'Fira Code','Courier New',monospace; font-size:13px; }
+  canvas { background:transparent !important; }
+  #synapse-canvas,#rain-canvas,#constellations-canvas,#perlin-flow-canvas,#petals-canvas,#sparkles-canvas,#embers-canvas{ opacity:var(--bg-effect-intensity,1); }
+  body.bg-pattern-dots {
+    background-image: radial-gradient(color-mix(in srgb, var(--bg-effect-color, var(--fg)) calc(14% * var(--bg-effect-intensity, 1)), transparent) 1px, transparent 1px);
+    background-size: 20px 20px;
+  }
+  body.bg-pattern-synapse {
+    background-image: linear-gradient(color-mix(in srgb, var(--bg-effect-color, var(--fg)) calc(10% * var(--bg-effect-intensity, 1)), transparent) 1px, transparent 1px),
+      linear-gradient(90deg, color-mix(in srgb, var(--bg-effect-color, var(--fg)) calc(10% * var(--bg-effect-intensity, 1)), transparent) 1px, transparent 1px);
+    background-size: 24px 24px;
+  }
+
+  .app { position:relative; z-index:1; display:flex; flex-direction:column; height:100vh; }
+  .topbar { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:6px 10px; padding:9px 24px; flex-shrink:0; }
+  .topbar .ttl { font-weight:600; font-size:13px; display:flex; align-items:center; gap:8px; opacity:.9; }
+  .topbar .ttl .boat { width:17px; height:17px; color:var(--red); }
+  .topbar-ctrls { display:flex; flex-wrap:wrap; align-items:center; justify-content:flex-end; gap:6px 14px; }
+  .topbar .theme-pick, .topbar .lang-pick { display:flex; align-items:center; gap:8px; }
+  .tedit { background:none; border:none; cursor:pointer; font-size:15px; padding:0 2px; line-height:1; opacity:.85; }
+  .tedit:hover { opacity:1; }
+  .teditor { position:fixed; inset:0; z-index:100; background:rgba(0,0,0,.5); display:flex; align-items:center; justify-content:center; }
+  .teditor[hidden] { display:none; }
+  .ted-box { background:var(--panel); border:1px solid color-mix(in srgb,var(--fg) 22%,transparent); border-radius:14px; padding:18px; box-shadow:0 18px 55px rgba(0,0,0,.6); width:316px; max-width:92vw; }
+  .ted-box .ted-ttl { font-weight:600; font-size:14px; margin-bottom:12px; }
+  .ted-box .ted-name { width:100%; margin-bottom:12px; }
+  .ted-picker { margin-bottom:12px; }
+  .ted-sv { position:relative; height:118px; border-radius:9px; cursor:crosshair; touch-action:none; }
+  .ted-sv-ptr { position:absolute; width:14px; height:14px; border-radius:50%; border:2px solid #fff; box-shadow:0 0 0 1.5px rgba(0,0,0,.6); transform:translate(-50%,-50%); pointer-events:none; }
+  .ted-hue { position:relative; height:14px; border-radius:7px; margin-top:9px; cursor:pointer; touch-action:none; background:linear-gradient(to right,#f00,#ff0,#0f0,#0ff,#00f,#f0f,#f00); }
+  .ted-hue-ptr { position:absolute; top:-2px; width:8px; height:18px; border-radius:3px; border:2px solid #fff; box-shadow:0 0 0 1.5px rgba(0,0,0,.6); transform:translateX(-50%); pointer-events:none; }
+  .ted-box .ted-grid { display:flex; flex-direction:column; gap:4px; }
+  .ted-box .ted-grid label { display:grid; grid-template-columns:1fr 26px 84px; align-items:center; gap:10px; font-size:13px; padding:3px 6px; border-radius:7px; cursor:pointer; }
+  .ted-box .ted-grid label.on { background:color-mix(in srgb,var(--fg) 13%,transparent); }
+  .ted-sw { width:26px; height:22px; border-radius:6px; border:1px solid color-mix(in srgb,var(--fg) 35%,transparent); }
+  .ted-hex { font-family:'Fira Code',monospace; font-size:12px; text-transform:uppercase; text-align:center; }
+  .ted-box .ted-fx { display:flex; align-items:center; justify-content:space-between; gap:10px; font-size:13px; margin-top:12px; }
+  .ted-box .ted-fx select { width:auto; min-width:140px; }
+  .ted-box .ted-fx input[type=range] { width:150px; }
+  .ted-box .ted-btns { display:flex; gap:8px; margin-top:14px; }
+  .ted-box .ted-btns .btn { flex:1; padding:8px 5px; }
+  #json-modal .ted-btns { gap:6px; }
+  #json-modal .ted-btns .btn { flex:0 1 auto; padding:8px 11px; }
+  .ted-box .ted-note { font-size:10px; opacity:.5; margin-top:11px; text-align:center; }
+  .vram { display:flex; align-items:center; gap:8px; margin-top:8px; }
+  .vram-bar { flex:1; height:7px; border-radius:5px; background:color-mix(in srgb,var(--fg) 14%,transparent); overflow:hidden; }
+  .vram-fill { height:100%; width:0; background:#3fb950; transition:width .4s, background .4s; }
+  .vram-fill.warn { background:#d8a657; }
+  .vram-fill.hot { background:var(--red); }
+  .vram-txt { font-size:10px; opacity:.65; white-space:nowrap; }
+  .ctx-warn { cursor:help; }
+  .topbar label { font-size:11px; opacity:.55; }
+  .topbar select { width:auto; min-width:140px; }
+  .topbar #lang-select { min-width:0; }
+  /* boutons fenetre (frameless) — vivent dans la barre HTML, plus de barre WinForms */
+  .win-ctrls { display:flex; align-items:center; gap:2px; margin-left:4px; }
+  .win-btn { width:30px; height:26px; display:flex; align-items:center; justify-content:center; background:none; border:none; border-radius:6px; color:var(--fg); opacity:.65; cursor:pointer; font-size:13px; line-height:1; }
+  .win-btn:hover { opacity:1; background:color-mix(in srgb,var(--fg) 14%,transparent); }
+  .win-btn.win-close:hover { background:var(--red); color:#fff; opacity:1; }
+
+  .main { flex:1; min-height:0; overflow-y:auto; overflow-x:hidden; padding:4px 24px 14px; }
+  /* 2 colonnes qui REMPLISSENT l'ecran. LLM pleine hauteur a gauche, Etat&test + Odysseus a droite.
+     Colonnes en fr => remplit la largeur ; lignes en 1fr => les cartes s'etirent pour remplir
+     toute la hauteur. AUCUN scroll dans une carte (pas de slider dans une carte). */
+  .wrap { height:100%; display:grid; gap:18px; grid-template-columns:1.5fr 1fr; grid-template-rows:1fr auto; }
+  .wrap > .card { min-width:0; min-height:0; margin-bottom:0; display:flex; flex-direction:column; }
+  /* card-elastic remplit la colonne gauche ; si la fenetre est trop COURTE pour tout afficher,
+     la carte scrolle en interne (sinon le bas debordait/chevauchait). A hauteur normale : remplit, pas de scroll. */
+  .wrap > .card.card-elastic { grid-column:1; grid-row:1 / span 2; overflow-y:auto; }
+  /* espaceur flexible : mange le vide et pousse le dernier bloc en bas, dans CHAQUE carte */
+  #card-llm-spacer { display:none; }
+  /* au lieu d'un gros vide avant les boutons : la boite Commande s'etire pour remplir la colonne gauche (comme la boite de logs a droite) */
+  #cmd-field { flex:1 1 auto; display:flex; flex-direction:column; margin-bottom:13px; }
+  #cmd-field > .cmd { flex:1 1 auto; min-height:62px; overflow:auto; }
+  .card > h2 .grip { margin-left:auto; cursor:grab; opacity:.45; font-size:14px; line-height:1; padding:0 4px; user-select:none; touch-action:none; }
+  .card > h2 .grip:hover { opacity:.95; }
+  .card > h2 .grip:active { cursor:grabbing; }
+  .card.dragging { opacity:.45; outline:2px dashed var(--red); outline-offset:-3px; }
+  /* Carte Etat & test : la boite de logs s'etire pour remplir l'espace libre (pas de slider + vide) */
+  #card-mon { display:flex; flex-direction:column; }
+  #card-mon .logfield { flex:1 1 auto; min-height:0; display:flex; flex-direction:column; }
+  #llm-log { flex:1 1 auto; min-height:64px; }
+  /* fenetre vraiment etroite : on empile en 1 colonne (cartes pleine largeur) */
+  @media (max-width:700px){
+    .wrap { display:flex; flex-direction:column; height:auto; min-height:100%; }
+    .wrap > .card { flex:0 0 auto; }
+    .wrap > .card.card-elastic { grid-column:auto; grid-row:auto; }
+    #card-mon { display:block; }
+    #card-mon .logfield { display:block; }
+    #llm-log { flex:none; max-height:240px; }
+  }
+  ::-webkit-scrollbar { width:10px; height:10px; }
+  ::-webkit-scrollbar-thumb { background:var(--border); border-radius:6px; }
+  ::-webkit-scrollbar-track { background:transparent; }
+
+  .card { background:var(--panel); border:1px solid color-mix(in srgb, var(--fg) 12%, transparent);
+    border-radius:var(--radius); padding:var(--card-pad); box-shadow:0 6px 18px rgba(0,0,0,0.28); margin-bottom:18px; }
+  .card > h2 { margin:0 0 14px; font-size:13px; font-weight:600; letter-spacing:.3px; display:flex; align-items:center; gap:8px; color:var(--fg); }
+  .card > h2 .dot { width:7px; height:7px; border-radius:50%; background:var(--accent); box-shadow:0 0 8px var(--accent); }
+  .reco { color:#5dd35d; font-size:11px; font-weight:600; }
+
+  .field { margin-bottom:13px; min-width:0; }
+  .field > .lbl { font-size:11px; opacity:.7; margin-bottom:5px; display:flex; justify-content:space-between; }
+  .field > .lbl .val { font-family:'Fira Code',monospace; color:var(--accent); }
+  select, input[type=text], input[type=number] { width:100%; min-width:0; background:color-mix(in srgb, var(--bg) 60%, var(--panel));
+    color:var(--fg); border:1px solid color-mix(in srgb, var(--fg) 15%, transparent); border-radius:9px; padding:8px 10px;
+    font-family:inherit; font-size:12px; outline:none; }
+  select:focus, input:focus { border-color:var(--accent); }
+  input[type=range] { -webkit-appearance:none; width:100%; height:5px; border-radius:5px; background:color-mix(in srgb, var(--fg) 16%, transparent); outline:none; }
+  input[type=range]::-webkit-slider-thumb { -webkit-appearance:none; width:15px; height:15px; border-radius:50%; background:var(--fg); cursor:pointer; box-shadow:0 0 6px color-mix(in srgb, var(--fg) 70%, transparent); }
+  input[type=range]::-moz-range-thumb { width:15px; height:15px; border:none; border-radius:50%; background:var(--fg); cursor:pointer; }
+
+  .grid3 { display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:10px 14px; }
+  .cmd { font-family:'Fira Code',monospace; font-size:11px; background:color-mix(in srgb, var(--bg) 70%, #000);
+    border:1px solid color-mix(in srgb, var(--fg) 10%, transparent); border-radius:9px; padding:9px 11px;
+    color:color-mix(in srgb, var(--fg) 85%, transparent); white-space:pre-wrap; word-break:break-all; }
+
+  .btnrow { display:flex; flex-wrap:wrap; gap:10px; margin-top:14px; }
+  button.btn { flex:1 1 140px; min-width:0; font-family:inherit; font-size:12px; font-weight:600; padding:10px 12px; border-radius:9px;
+    cursor:pointer; border:1px solid transparent; white-space:normal; line-height:1.25; text-align:center; transition:filter .12s, background .12s, border-color .12s; }
+  .btn-primary { background:var(--red); color:var(--bg); border-color:var(--red); }
+  .btn-primary:hover { filter:brightness(1.12); }
+  .btn-ghost { background:color-mix(in srgb, var(--fg) 9%, transparent); color:var(--fg); border-color:color-mix(in srgb, var(--fg) 20%, transparent); }
+  .btn-ghost:hover { background:color-mix(in srgb, var(--accent) 20%, transparent); border-color:var(--accent); }
+  .btn-danger { background:color-mix(in srgb, var(--red) 12%, transparent); color:var(--red); border-color:color-mix(in srgb, var(--red) 40%, transparent); }
+  .btn-danger:hover { background:color-mix(in srgb, var(--red) 22%, transparent); border-color:var(--red); }
+
+  .status { display:flex; flex-wrap:wrap; align-items:center; gap:9px; font-size:11px; margin-top:12px; padding:9px 11px; border-radius:9px;
+    background:color-mix(in srgb, var(--bg) 55%, var(--panel)); border:1px solid color-mix(in srgb, var(--fg) 9%, transparent); }
+  .status .led { width:8px; height:8px; border-radius:50%; background:#5dd35d; box-shadow:0 0 8px #5dd35d; flex-shrink:0; }
+  .status .led.off { background:#777; box-shadow:none; }
+
+  .switch { display:inline-flex; align-items:center; gap:8px; cursor:pointer; font-size:12px; }
+  .switch input { display:none; }
+  .switch .track { width:34px; height:18px; border-radius:10px; background:color-mix(in srgb,var(--fg) 20%,transparent); position:relative; transition:background .15s; }
+  .switch .track::after { content:''; position:absolute; top:2px; left:2px; width:14px; height:14px; border-radius:50%; background:var(--fg); transition:transform .15s; }
+  .switch input:checked + .track { background:var(--accent); }
+  .switch input:checked + .track::after { transform:translateX(16px); }
+
+  /* --- Responsive : fenêtre étroite / portrait --- */
+  @media (max-width: 580px) {
+    .topbar { padding-left:14px; padding-right:14px; }
+    .main { padding-left:14px; padding-right:14px; }
+    .grid3 { grid-template-columns:repeat(2, minmax(0,1fr)); }
+  }
+  @media (max-width: 380px) {
+    .topbar { padding-left:10px; padding-right:10px; }
+    .main { padding-left:10px; padding-right:10px; }
+    .grid3 { grid-template-columns:minmax(0,1fr); }
+    .topbar select { min-width:0; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="topbar">
+    <div class="ttl"><svg class="boat" viewBox="0 0 24 24" fill="currentColor"><path d="M3 16l9-3 9 3-2 4H5l-2-4zm9-13l1 9-6 2 5-11zm0 0l5 11-5-1.6V3z"/></svg> Odysseus Dashboard</div>
+    <div class="topbar-ctrls">
+      <div class="lang-pick"><label data-i18n="lang">Langue</label><select id="lang-select"></select></div>
+      <div class="theme-pick"><label data-i18n="theme">Thème</label><select id="theme-select"></select><button id="theme-edit" class="tedit" title="Créer / éditer un thème">🎨</button></div>
+      <div class="win-ctrls no-drag">
+        <button class="win-btn" id="win-min" title="Réduire" aria-label="Réduire">&#x2013;</button>
+        <button class="win-btn" id="win-max" title="Agrandir / Restaurer" aria-label="Agrandir / Restaurer">&#x25A1;</button>
+        <button class="win-btn win-close" id="win-close" title="Fermer" aria-label="Fermer">&#x2715;</button>
+      </div>
+    </div>
+  </header>
+  <div id="theme-editor" class="teditor" hidden>
+    <div class="ted-box">
+      <div class="ted-ttl" data-i18n="customTheme">Thème perso</div>
+      <input id="ted-name" type="text" placeholder="Nom du thème" data-i18n-ph="themeName" class="ted-name">
+      <div class="ted-picker">
+        <div class="ted-sv" id="ted-sv"><div class="ted-sv-ptr" id="ted-sv-ptr"></div></div>
+        <div class="ted-hue" id="ted-hue"><div class="ted-hue-ptr" id="ted-hue-ptr"></div></div>
+      </div>
+      <div class="ted-grid">
+        <label data-k="bg"><span data-i18n="cBg">Fond</span><span class="ted-sw" id="ted-bg-sw"></span><input id="ted-bg-h" type="text" class="ted-hex" maxlength="7" spellcheck="false"></label>
+        <label data-k="fg"><span data-i18n="cFg">Texte</span><span class="ted-sw" id="ted-fg-sw"></span><input id="ted-fg-h" type="text" class="ted-hex" maxlength="7" spellcheck="false"></label>
+        <label data-k="panel"><span data-i18n="cPanel">Panneau</span><span class="ted-sw" id="ted-panel-sw"></span><input id="ted-panel-h" type="text" class="ted-hex" maxlength="7" spellcheck="false"></label>
+        <label data-k="border"><span data-i18n="cBorder">Bordure</span><span class="ted-sw" id="ted-border-sw"></span><input id="ted-border-h" type="text" class="ted-hex" maxlength="7" spellcheck="false"></label>
+        <label data-k="red"><span data-i18n="cAccent">Accent</span><span class="ted-sw" id="ted-red-sw"></span><input id="ted-red-h" type="text" class="ted-hex" maxlength="7" spellcheck="false"></label>
+      </div>
+      <div class="ted-fx"><span data-i18n="bgEffect">Effet de fond</span><select id="ted-pattern">
+        <option value="none" data-i18n="fxNone">Aucun</option><option value="dots" data-i18n="fxDots">Points</option><option value="synapse" data-i18n="fxSynapse">Synapse</option><option value="rain" data-i18n="fxRain">Pluie</option><option value="petals" data-i18n="fxPetals">Pétales</option><option value="constellations" data-i18n="fxConstell">Constellations</option><option value="embers" data-i18n="fxEmbers">Braises</option><option value="sparkles" data-i18n="fxSparkles">Étincelles</option><option value="perlin-flow" data-i18n="fxPerlin">Perlin</option>
+      </select></div>
+      <div class="ted-fx"><span data-i18n="intensity">Intensité</span><input type="range" id="ted-intensity" min="0" max="1" step="0.05" value="1"></div>
+      <div class="ted-fx"><span data-i18n="speed">Vitesse</span><input type="range" id="ted-speed" min="0.2" max="3" step="0.1" value="1"></div>
+      <div class="ted-btns"><button id="ted-save" class="btn btn-primary" data-i18n="save">Enregistrer</button><button id="ted-del" class="btn btn-danger" data-i18n="delete">Supprimer</button><button id="ted-close" class="btn btn-ghost" data-i18n="close">Fermer</button></div>
+      <div class="ted-note" data-i18n="sharedOdy">Partagé avec Odysseus</div>
+      <div style="text-align:center;margin-top:6px"><a id="ted-io" data-i18n="jsonIO" style="cursor:pointer;text-decoration:underline;opacity:.65;font-size:11px">Import / Export JSON</a></div>
+    </div>
+  </div>
+
+  <div id="json-modal" class="teditor" hidden>
+    <div class="ted-box" style="max-width:480px">
+      <div class="ted-ttl" id="json-title">Import / Export</div>
+      <textarea id="json-area" spellcheck="false" style="width:100%;height:240px;box-sizing:border-box;resize:vertical;font-family:'Fira Code',monospace;font-size:11px;line-height:1.4;padding:8px;border:1px solid var(--border);border-radius:8px;background:rgba(0,0,0,.22);color:var(--fg)"></textarea>
+      <div id="json-err" style="color:var(--red);display:none;font-size:11px;margin-top:5px"></div>
+      <div class="ted-btns" style="flex-wrap:wrap">
+        <button id="json-copy" class="btn btn-ghost" data-i18n="jsonCopy">Copier</button>
+        <button id="json-savefile" class="btn btn-ghost" data-i18n="jsonSave">Enregistrer .json</button>
+        <button id="json-loadfile" class="btn btn-ghost" data-i18n="jsonLoad">Charger .json</button>
+        <button id="json-import" class="btn btn-primary" data-i18n="jsonImport">Importer</button>
+        <button id="json-close" class="btn btn-ghost" data-i18n="close">Fermer</button>
+      </div>
+      <input id="json-file" type="file" accept=".json,application/json" hidden>
+    </div>
+  </div>
+
+  <main class="main"><div class="wrap" id="panel-grid">
+    <section class="card card-elastic" id="card-llm" data-panel="llm">
+      <h2><span class="dot"></span> <span data-i18n="cardLLM">Serveur LLM local</span><span class="grip" data-i18n-title="dragHint" title="Glisser pour réorganiser">⠿</span></h2>
+      <div class="field">
+        <div class="lbl" data-i18n="model">Modèle (GGUF)</div>
+        <select id="model"><option data-i18n="scanning">— scan en cours —</option></select>
+      </div>
+      <div class="field"><div class="lbl"><span data-i18n="family">Famille détectée</span> <span class="reco" id="fam">—</span></div></div>
+      <div class="grid3">
+        <div class="field"><div class="lbl">temp <span class="val" id="v-temp">1.00</span></div><input type="range" id="s-temp" min="0" max="2" step="0.05" value="1"></div>
+        <div class="field"><div class="lbl">top_p <span class="val" id="v-topp">0.95</span></div><input type="range" id="s-topp" min="0" max="1" step="0.01" value="0.95"></div>
+        <div class="field"><div class="lbl">top_k <span class="val" id="v-topk">64</span></div><input type="range" id="s-topk" min="0" max="100" step="1" value="64"></div>
+        <div class="field"><div class="lbl">min_p <span class="val" id="v-minp">0.00</span></div><input type="range" id="s-minp" min="0" max="1" step="0.01" value="0"></div>
+        <div class="field"><div class="lbl">repeat <span class="val" id="v-rep">1.00</span></div><input type="range" id="s-rep" min="1" max="1.5" step="0.01" value="1"></div>
+      </div>
+      <div class="grid3">
+        <div class="field"><div class="lbl"><span data-i18n="ctx">contexte (-c)</span><span class="ctx-warn" id="ctx-warn" hidden> ⚠️</span></div><input type="number" id="ctx" value="8192"></div>
+        <div class="field"><div class="lbl" data-i18n="ngl">GPU layers (-ngl)</div><input type="number" id="ngl" value="99"></div>
+        <div class="field"><div class="lbl" data-i18n="port">port</div><input type="number" id="port" value="8000"></div>
+      </div>
+      <div class="field" id="cmd-field"><div class="lbl" data-i18n="cmd">Commande</div><div class="cmd" id="cmd">—</div></div>
+      <label class="switch"><input type="checkbox" id="fast"><span class="track"></span> <span data-i18n="fast">Mode rapide (sans réflexion)</span></label>
+      <div class="field" id="card-llm-presets" style="border:1px solid var(--border);border-radius:10px;padding:8px 10px;margin-top:8px;background:color-mix(in srgb,var(--panel) 55%,transparent)"><div class="lbl">💾 <span data-i18n="presets">Presets de réglages</span></div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:4px">
+          <select id="preset-sel" style="flex:1 1 110px;min-width:90px"></select>
+          <input id="preset-name" type="text" data-i18n-ph="presetName" placeholder="nom…" maxlength="24" style="flex:1 1 90px;min-width:70px">
+          <button class="btn btn-ghost" id="preset-save" data-i18n="presetSave" style="flex:0 0 auto">Sauver</button>
+          <button class="btn btn-ghost" id="preset-del" title="suppr" style="flex:0 0 auto">🗑</button>
+          <button class="btn btn-ghost" id="preset-io" title="Import / Export JSON" style="flex:0 0 auto">⇅</button>
+        </div>
+      </div>
+      <div id="card-llm-spacer"></div>
+      <div class="btnrow">
+        <button class="btn btn-ghost" data-act="reco" data-i18n="btnReco">Réglages recommandés</button>
+        <button class="btn btn-primary" data-act="launch" data-i18n="btnLaunch">Lancer / Recharger</button>
+        <button class="btn btn-danger" data-act="stop" data-i18n="btnStop">Arrêter</button>
+        <button class="btn btn-ghost" data-act="test" data-i18n="btnTest">Tester le modèle</button>
+      </div>
+      <!-- version llama.cpp : check -> confirme -> update (script partage Update-LlamaServer.ps1, jamais silencieux) -->
+      <div class="btnrow" id="llama-ver-row" style="margin-top:6px;align-items:center">
+        <button class="btn btn-ghost" data-act="llama-check" id="llama-check-btn">Vérifier MAJ llama</button>
+        <span id="llama-ver" style="font-size:11px;opacity:.8;flex:1 1 140px;min-width:0"></span>
+      </div>
+    </section>
+    <section class="card" id="card-mon" data-panel="mon">
+      <h2><span class="dot"></span> <span data-i18n="cardMon">État &amp; test</span><span class="grip" data-i18n-title="dragHint" title="Glisser pour réorganiser">⠿</span></h2>
+      <div class="status"><span class="led off" id="llm-led"></span> <span id="llm-status">LLM : …</span></div>
+      <div class="vram"><div class="vram-bar"><div class="vram-fill" id="vram-fill"></div></div><span class="vram-txt" id="vram-txt">VRAM —</span></div>
+      <div class="field" style="margin-top:12px">
+        <div class="lbl"><span data-i18n="testResp">Réponse du test</span> · <a id="test-toggle" style="cursor:pointer;text-decoration:underline;opacity:.7;font-size:11px">afficher</a></div>
+        <div class="cmd" id="test-out" data-i18n="testHint" hidden style="min-height:56px; max-height:160px; overflow:auto; color:color-mix(in srgb,var(--fg) 70%,transparent)">Clique « Tester le modèle » pour envoyer un prompt rapide au serveur.</div>
+      </div>
+      <div class="field logfield" style="margin-top:12px">
+        <div class="lbl"><span data-i18n="llmLog">Logs llama-server</span> · <a id="log-toggle" style="cursor:pointer;text-decoration:underline;opacity:.7;font-size:11px">masquer</a></div>
+        <pre id="llm-log" style="overflow:auto;white-space:pre-wrap;word-break:break-word;margin:6px 0 0;padding:8px;border:1px solid var(--border);border-radius:8px;font-size:10.5px;line-height:1.45;color:color-mix(in srgb,var(--fg) 80%,transparent);background:rgba(0,0,0,.18)"></pre>
+      </div>
+    </section>
+
+    <section class="card" id="card-ody" data-panel="ody">
+      <h2><span class="dot"></span> Odysseus (Docker)<span class="grip" data-i18n-title="dragHint" title="Glisser pour réorganiser">⠿</span></h2>
+      <div class="btnrow" style="margin-top:0">
+        <button class="btn btn-primary" data-act="ody-start" data-i18n="btnOdyStart">Démarrer</button>
+        <button class="btn btn-danger" data-act="ody-stop" data-i18n="btnStop">Arrêter</button>
+        <button class="btn btn-ghost" data-act="ody-update" data-i18n="btnOdyUpdate">Update</button>
+        <button class="btn btn-ghost" data-act="ody-open" data-i18n="btnOdyOpen">Ouvrir l'app</button>
+      </div>
+      <div class="status"><span class="led off" id="ody-led"></span> <span id="ody-status">Odysseus : …</span></div>
+    </section>
+  </div></main>
+</div>
+
+<script type="module">
+  import { THEMES } from './js/theme.js';
+  import { applyBgPattern, applyBgEffectColor, applyBgEffectIntensity, applyBgEffectSpeed } from './dashboard-fx.js';
+  const PATTERN = { dark:'none', light:'dots', midnight:'rain', paper:'dots', cyberpunk:'synapse',
+    retrowave:'embers', forest:'petals', ocean:'constellations', ume:'petals', copper:'none',
+    terminal:'perlin-flow', organs:'rain', lavender:'none', gpt:'none', claude:'none', cute:'sparkles' };
+  const $ = id => document.getElementById(id);
+  const send = o => { try { window.chrome?.webview?.postMessage(JSON.stringify(o)); } catch(e){} };
+
+  // ----- Fenetre sans cadre : drag de la barre + boutons min/max/close (pilotes par l'hote PowerShell) -----
+  (function(){
+    const tb = document.querySelector('.topbar');
+    const interactive = (t) => t.closest('button,select,input,a,.no-drag,.win-ctrls,.theme-pick,.lang-pick');
+    if (tb) {
+      tb.addEventListener('mousedown', (e) => { if (e.button === 0 && !interactive(e.target)) send({ type:'drag' }); });
+      tb.addEventListener('dblclick', (e) => { if (!interactive(e.target)) send({ type:'win', action:'maximize' }); });
+    }
+    const wire = (id, action) => { const b = document.getElementById(id); if (b) b.addEventListener('click', () => send({ type:'win', action })); };
+    wire('win-min','minimize'); wire('win-max','maximize'); wire('win-close','close');
+  })();
+
+  let MODELS = [], EXE = 'llama-server', _scanned = false, lastStatus = null;
+
+  // ----- i18n (langue de l'interface) -----
+  const LANG_NAMES = { fr:'Français', en:'English', es:'Español', de:'Deutsch', it:'Italiano',
+    pt:'Português', nl:'Nederlands', ru:'Русский', zh:'中文', ja:'日本語' };
+  const I18N = {
+    fr:{ lang:'Langue', theme:'Thème', cardLLM:'Serveur LLM local', model:'Modèle (GGUF)', family:'Famille détectée', ctx:'contexte (-c)', ngl:'GPU layers (-ngl)', port:'port', cmd:'Commande', fast:'Mode rapide (sans réflexion)', btnReco:'Réglages recommandés', btnLaunch:'Lancer / Recharger', btnStop:'Arrêter', btnTest:'Tester le modèle', testResp:'Réponse du test', testHint:'Clique « Tester le modèle » pour envoyer un prompt rapide au serveur.', btnOdyStart:'Démarrer', btnOdyUpdate:'Mettre à jour', btnOdyOpen:"Ouvrir l'app", scanning:'— scan en cours —', noModels:'Aucun GGUF trouvé sous data\\huggingface ou data\\local', launching:'lancement…', stopping:'arrêt…', testing:'Test en cours…', pickModel:"choisis un modèle d'abord", odyOnline:'en ligne (:7000)', odyOffline:'arrêté / injoignable', llmOffline:'aucun serveur sur :8000 (clique « Lancer / Recharger »)' },
+    en:{ lang:'Language', theme:'Theme', cardLLM:'Local LLM server', model:'Model (GGUF)', family:'Detected family', ctx:'context (-c)', ngl:'GPU layers (-ngl)', port:'port', cmd:'Command', fast:'Fast mode (no reasoning)', btnReco:'Recommended settings', btnLaunch:'Launch / Reload', btnStop:'Stop', btnTest:'Test the model', testResp:'Test response', testHint:'Click "Test the model" to send a quick prompt to the server.', btnOdyStart:'Start', btnOdyUpdate:'Update', btnOdyOpen:'Open the app', scanning:'— scanning —', noModels:'No GGUF found under data\\huggingface or data\\local', launching:'launching…', stopping:'stopping…', testing:'Testing…', pickModel:'pick a model first', odyOnline:'online (:7000)', odyOffline:'stopped / unreachable', llmOffline:'no server on :8000 (click "Launch / Reload")' },
+    es:{ lang:'Idioma', theme:'Tema', cardLLM:'Servidor LLM local', model:'Modelo (GGUF)', family:'Familia detectada', ctx:'contexto (-c)', ngl:'Capas GPU (-ngl)', port:'puerto', cmd:'Comando', fast:'Modo rápido (sin razonamiento)', btnReco:'Ajustes recomendados', btnLaunch:'Iniciar / Recargar', btnStop:'Detener', btnTest:'Probar el modelo', testResp:'Respuesta de la prueba', testHint:'Haz clic en «Probar el modelo» para enviar un prompt rápido al servidor.', btnOdyStart:'Iniciar', btnOdyUpdate:'Actualizar', btnOdyOpen:'Abrir la app', scanning:'— escaneando —', noModels:'No se encontró ningún GGUF en data\\huggingface o data\\local', launching:'iniciando…', stopping:'deteniendo…', testing:'Probando…', pickModel:'elige primero un modelo', odyOnline:'en línea (:7000)', odyOffline:'detenido / inaccesible', llmOffline:'ningún servidor en :8000 (haz clic en «Iniciar / Recargar»)' },
+    de:{ lang:'Sprache', theme:'Thema', cardLLM:'Lokaler LLM-Server', model:'Modell (GGUF)', family:'Erkannte Familie', ctx:'Kontext (-c)', ngl:'GPU-Layer (-ngl)', port:'Port', cmd:'Befehl', fast:'Schnellmodus (ohne Reasoning)', btnReco:'Empfohlene Einstellungen', btnLaunch:'Starten / Neu laden', btnStop:'Stoppen', btnTest:'Modell testen', testResp:'Testantwort', testHint:'Klicke auf „Modell testen", um einen kurzen Prompt an den Server zu senden.', btnOdyStart:'Starten', btnOdyUpdate:'Aktualisieren', btnOdyOpen:'App öffnen', scanning:'— wird gescannt —', noModels:'Kein GGUF unter data\\huggingface oder data\\local gefunden', launching:'wird gestartet…', stopping:'wird gestoppt…', testing:'Test läuft…', pickModel:'zuerst ein Modell wählen', odyOnline:'online (:7000)', odyOffline:'gestoppt / nicht erreichbar', llmOffline:'kein Server auf :8000 (klicke „Starten / Neu laden")' },
+    it:{ lang:'Lingua', theme:'Tema', cardLLM:'Server LLM locale', model:'Modello (GGUF)', family:'Famiglia rilevata', ctx:'contesto (-c)', ngl:'Layer GPU (-ngl)', port:'porta', cmd:'Comando', fast:'Modalità rapida (senza ragionamento)', btnReco:'Impostazioni consigliate', btnLaunch:'Avvia / Ricarica', btnStop:'Ferma', btnTest:'Prova il modello', testResp:'Risposta del test', testHint:'Clicca su «Prova il modello» per inviare un prompt rapido al server.', btnOdyStart:'Avvia', btnOdyUpdate:'Aggiorna', btnOdyOpen:"Apri l'app", scanning:'— scansione —', noModels:'Nessun GGUF trovato in data\\huggingface o data\\local', launching:'avvio…', stopping:'arresto…', testing:'Test in corso…', pickModel:'scegli prima un modello', odyOnline:'online (:7000)', odyOffline:'fermo / irraggiungibile', llmOffline:'nessun server su :8000 (clicca «Avvia / Ricarica»)' },
+    pt:{ lang:'Idioma', theme:'Tema', cardLLM:'Servidor LLM local', model:'Modelo (GGUF)', family:'Família detetada', ctx:'contexto (-c)', ngl:'Camadas GPU (-ngl)', port:'porta', cmd:'Comando', fast:'Modo rápido (sem raciocínio)', btnReco:'Definições recomendadas', btnLaunch:'Iniciar / Recarregar', btnStop:'Parar', btnTest:'Testar o modelo', testResp:'Resposta do teste', testHint:'Clica em «Testar o modelo» para enviar um prompt rápido ao servidor.', btnOdyStart:'Iniciar', btnOdyUpdate:'Atualizar', btnOdyOpen:'Abrir a app', scanning:'— a analisar —', noModels:'Nenhum GGUF encontrado em data\\huggingface ou data\\local', launching:'a iniciar…', stopping:'a parar…', testing:'A testar…', pickModel:'escolhe primeiro um modelo', odyOnline:'online (:7000)', odyOffline:'parado / inacessível', llmOffline:'nenhum servidor em :8000 (clica «Iniciar / Recarregar»)' },
+    nl:{ lang:'Taal', theme:'Thema', cardLLM:'Lokale LLM-server', model:'Model (GGUF)', family:'Gedetecteerde familie', ctx:'context (-c)', ngl:'GPU-lagen (-ngl)', port:'poort', cmd:'Opdracht', fast:'Snelle modus (zonder redeneren)', btnReco:'Aanbevolen instellingen', btnLaunch:'Starten / Herladen', btnStop:'Stoppen', btnTest:'Model testen', testResp:'Testantwoord', testHint:"Klik op 'Model testen' om een snelle prompt naar de server te sturen.", btnOdyStart:'Starten', btnOdyUpdate:'Bijwerken', btnOdyOpen:'App openen', scanning:'— scannen —', noModels:'Geen GGUF gevonden in data\\huggingface of data\\local', launching:'starten…', stopping:'stoppen…', testing:'Bezig met testen…', pickModel:'kies eerst een model', odyOnline:'online (:7000)', odyOffline:'gestopt / onbereikbaar', llmOffline:"geen server op :8000 (klik 'Starten / Herladen')" },
+    ru:{ lang:'Язык', theme:'Тема', cardLLM:'Локальный LLM-сервер', model:'Модель (GGUF)', family:'Определённое семейство', ctx:'контекст (-c)', ngl:'Слои GPU (-ngl)', port:'порт', cmd:'Команда', fast:'Быстрый режим (без рассуждений)', btnReco:'Рекомендуемые настройки', btnLaunch:'Запустить / Перезагрузить', btnStop:'Остановить', btnTest:'Проверить модель', testResp:'Ответ теста', testHint:'Нажмите «Проверить модель», чтобы отправить быстрый запрос на сервер.', btnOdyStart:'Запустить', btnOdyUpdate:'Обновить', btnOdyOpen:'Открыть приложение', scanning:'— сканирование —', noModels:'GGUF не найден в data\\huggingface или data\\local', launching:'запуск…', stopping:'остановка…', testing:'Тестирование…', pickModel:'сначала выберите модель', odyOnline:'онлайн (:7000)', odyOffline:'остановлен / недоступен', llmOffline:'нет сервера на :8000 (нажмите «Запустить / Перезагрузить»)' },
+    zh:{ lang:'语言', theme:'主题', cardLLM:'本地 LLM 服务器', model:'模型 (GGUF)', family:'检测到的系列', ctx:'上下文 (-c)', ngl:'GPU 层 (-ngl)', port:'端口', cmd:'命令', fast:'快速模式（无推理）', btnReco:'推荐设置', btnLaunch:'启动 / 重新加载', btnStop:'停止', btnTest:'测试模型', testResp:'测试响应', testHint:'点击"测试模型"向服务器发送一个快速提示。', btnOdyStart:'启动', btnOdyUpdate:'更新', btnOdyOpen:'打开应用', scanning:'— 扫描中 —', noModels:'在 data\\huggingface 或 data\\local 下未找到 GGUF', launching:'启动中…', stopping:'停止中…', testing:'测试中…', pickModel:'请先选择一个模型', odyOnline:'在线 (:7000)', odyOffline:'已停止 / 无法访问', llmOffline:':8000 上没有服务器（点击"启动 / 重新加载"）' },
+    ja:{ lang:'言語', theme:'テーマ', cardLLM:'ローカル LLM サーバー', model:'モデル (GGUF)', family:'検出されたファミリー', ctx:'コンテキスト (-c)', ngl:'GPU レイヤー (-ngl)', port:'ポート', cmd:'コマンド', fast:'高速モード（推論なし）', btnReco:'推奨設定', btnLaunch:'起動 / 再読み込み', btnStop:'停止', btnTest:'モデルをテスト', testResp:'テスト応答', testHint:'「モデルをテスト」をクリックして、サーバーに簡単なプロンプトを送信します。', btnOdyStart:'起動', btnOdyUpdate:'更新', btnOdyOpen:'アプリを開く', scanning:'— スキャン中 —', noModels:'data\\huggingface または data\\local に GGUF が見つかりません', launching:'起動中…', stopping:'停止中…', testing:'テスト中…', pickModel:'最初にモデルを選択してください', odyOnline:'オンライン (:7000)', odyOffline:'停止 / 接続不可', llmOffline:':8000 にサーバーがありません（「起動 / 再読み込み」をクリック）' },
+  };
+  Object.assign(I18N.fr, { testNoServer:'Échec : pas de serveur sur :8000 ? Lance le LLM d’abord.', testEmpty:'(réponse vide)' });
+  Object.assign(I18N.en, { testNoServer:'Failed: no server on :8000? Start the LLM first.', testEmpty:'(empty response)' });
+  Object.assign(I18N.es, { testNoServer:'Error: ¿ningún servidor en :8000? Inicia primero el LLM.', testEmpty:'(respuesta vacía)' });
+  Object.assign(I18N.de, { testNoServer:'Fehler: kein Server auf :8000? Starte zuerst das LLM.', testEmpty:'(leere Antwort)' });
+  Object.assign(I18N.it, { testNoServer:'Errore: nessun server su :8000? Avvia prima l’LLM.', testEmpty:'(risposta vuota)' });
+  Object.assign(I18N.pt, { testNoServer:'Falha: nenhum servidor em :8000? Inicia primeiro o LLM.', testEmpty:'(resposta vazia)' });
+  Object.assign(I18N.nl, { testNoServer:'Mislukt: geen server op :8000? Start eerst de LLM.', testEmpty:'(leeg antwoord)' });
+  Object.assign(I18N.ru, { testNoServer:'Ошибка: нет сервера на :8000? Сначала запустите LLM.', testEmpty:'(пустой ответ)' });
+  Object.assign(I18N.zh, { testNoServer:'失败：:8000 上没有服务器？请先启动 LLM。', testEmpty:'（空响应）' });
+  Object.assign(I18N.ja, { testNoServer:'失敗：:8000 にサーバーがありません。先に LLM を起動してください。', testEmpty:'（空の応答）' });
+  Object.assign(I18N.fr, { btnVerCheck:'Vérifier MAJ llama', btnVerUpdate:'Mettre à jour →', verIdle:'llama.cpp : version non vérifiée', verChecking:'vérification…', verUpToDate:'à jour (build {b})', verAvail:'MAJ dispo : build {b} (local : {l}) — re-clique pour installer', verUpdating:'mise à jour… (téléchargement ~260 Mo, garde la fenêtre ouverte)', verUpdated:'mis à jour → build {b} ✓', verRestart:'serveur arrêté, relance-le', verError:'échec (réseau ? réessaie)' });
+  Object.assign(I18N.en, { btnVerCheck:'Check llama update', btnVerUpdate:'Update →', verIdle:'llama.cpp: version not checked', verChecking:'checking…', verUpToDate:'up to date (build {b})', verAvail:'update available: build {b} (local: {l}) — click again to install', verUpdating:'updating… (~260 MB download, keep the window open)', verUpdated:'updated → build {b} ✓', verRestart:'server stopped, relaunch it', verError:'failed (network? retry)' });
+  Object.assign(I18N.es, { btnVerCheck:'Buscar actualización llama', btnVerUpdate:'Actualizar →', verIdle:'llama.cpp: versión sin comprobar', verChecking:'comprobando…', verUpToDate:'al día (build {b})', verAvail:'actualización disponible: build {b} (local: {l}) — vuelve a pulsar para instalar', verUpdating:'actualizando… (descarga ~260 MB, no cierres la ventana)', verUpdated:'actualizado → build {b} ✓', verRestart:'servidor detenido, reinícialo', verError:'fallo (¿red? reintenta)' });
+  Object.assign(I18N.de, { btnVerCheck:'Llama-Update prüfen', btnVerUpdate:'Aktualisieren →', verIdle:'llama.cpp: Version nicht geprüft', verChecking:'wird geprüft…', verUpToDate:'aktuell (Build {b})', verAvail:'Update verfügbar: Build {b} (lokal: {l}) — erneut klicken zum Installieren', verUpdating:'wird aktualisiert… (~260 MB Download, Fenster offen lassen)', verUpdated:'aktualisiert → Build {b} ✓', verRestart:'Server gestoppt, bitte neu starten', verError:'fehlgeschlagen (Netzwerk? erneut versuchen)' });
+  Object.assign(I18N.it, { btnVerCheck:'Verifica agg. llama', btnVerUpdate:'Aggiorna →', verIdle:'llama.cpp: versione non verificata', verChecking:'verifica…', verUpToDate:'aggiornato (build {b})', verAvail:'aggiornamento disponibile: build {b} (locale: {l}) — clicca di nuovo per installare', verUpdating:'aggiornamento… (download ~260 MB, tieni aperta la finestra)', verUpdated:'aggiornato → build {b} ✓', verRestart:'server fermato, riavvialo', verError:'errore (rete? riprova)' });
+  Object.assign(I18N.pt, { btnVerCheck:'Verificar atualização llama', btnVerUpdate:'Atualizar →', verIdle:'llama.cpp: versão não verificada', verChecking:'a verificar…', verUpToDate:'atualizado (build {b})', verAvail:'atualização disponível: build {b} (local: {l}) — clica de novo para instalar', verUpdating:'a atualizar… (download ~260 MB, mantém a janela aberta)', verUpdated:'atualizado → build {b} ✓', verRestart:'servidor parado, reinicia-o', verError:'falhou (rede? tenta de novo)' });
+  Object.assign(I18N.nl, { btnVerCheck:'Check llama-update', btnVerUpdate:'Bijwerken →', verIdle:'llama.cpp: versie niet gecontroleerd', verChecking:'controleren…', verUpToDate:'up-to-date (build {b})', verAvail:'update beschikbaar: build {b} (lokaal: {l}) — klik nogmaals om te installeren', verUpdating:'bijwerken… (~260 MB download, houd het venster open)', verUpdated:'bijgewerkt → build {b} ✓', verRestart:'server gestopt, herstart hem', verError:'mislukt (netwerk? probeer opnieuw)' });
+  Object.assign(I18N.ru, { btnVerCheck:'Проверить обновление llama', btnVerUpdate:'Обновить →', verIdle:'llama.cpp: версия не проверена', verChecking:'проверка…', verUpToDate:'актуально (сборка {b})', verAvail:'доступно обновление: сборка {b} (локально: {l}) — нажмите ещё раз для установки', verUpdating:'обновление… (загрузка ~260 МБ, не закрывайте окно)', verUpdated:'обновлено → сборка {b} ✓', verRestart:'сервер остановлен, перезапустите его', verError:'ошибка (сеть? повторите)' });
+  Object.assign(I18N.zh, { btnVerCheck:'检查 llama 更新', btnVerUpdate:'更新 →', verIdle:'llama.cpp：版本未检查', verChecking:'检查中…', verUpToDate:'已是最新（build {b}）', verAvail:'有更新：build {b}（本地：{l}）— 再次点击安装', verUpdating:'更新中…（下载约 260 MB，请勿关闭窗口）', verUpdated:'已更新 → build {b} ✓', verRestart:'服务器已停止，请重新启动', verError:'失败（网络问题？请重试）' });
+  Object.assign(I18N.ja, { btnVerCheck:'llama の更新を確認', btnVerUpdate:'更新 →', verIdle:'llama.cpp：バージョン未確認', verChecking:'確認中…', verUpToDate:'最新です（build {b}）', verAvail:'更新あり：build {b}（ローカル：{l}）— もう一度クリックでインストール', verUpdating:'更新中…（約 260 MB をダウンロード、ウィンドウを閉じないで）', verUpdated:'更新完了 → build {b} ✓', verRestart:'サーバー停止中、再起動してください', verError:'失敗（ネットワーク？再試行）' });
+  Object.assign(I18N.fr, { customTheme:'Thème perso', themeName:'Nom du thème', cBg:'Fond', cFg:'Texte', cPanel:'Panneau', cBorder:'Bordure', cAccent:'Accent', bgEffect:'Effet de fond', intensity:'Intensité', save:'Enregistrer', delete:'Supprimer', close:'Fermer', sharedOdy:'Partagé avec Odysseus' });
+  Object.assign(I18N.en, { customTheme:'Custom theme', themeName:'Theme name', cBg:'Background', cFg:'Text', cPanel:'Panel', cBorder:'Border', cAccent:'Accent', bgEffect:'Background effect', intensity:'Intensity', save:'Save', delete:'Delete', close:'Close', sharedOdy:'Shared with Odysseus' });
+  Object.assign(I18N.es, { customTheme:'Tema personalizado', themeName:'Nombre del tema', cBg:'Fondo', cFg:'Texto', cPanel:'Panel', cBorder:'Borde', cAccent:'Acento', bgEffect:'Efecto de fondo', intensity:'Intensidad', save:'Guardar', delete:'Eliminar', close:'Cerrar', sharedOdy:'Compartido con Odysseus' });
+  Object.assign(I18N.de, { customTheme:'Eigenes Thema', themeName:'Themenname', cBg:'Hintergrund', cFg:'Text', cPanel:'Panel', cBorder:'Rahmen', cAccent:'Akzent', bgEffect:'Hintergrundeffekt', intensity:'Intensität', save:'Speichern', delete:'Löschen', close:'Schließen', sharedOdy:'Mit Odysseus geteilt' });
+  Object.assign(I18N.it, { customTheme:'Tema personalizzato', themeName:'Nome del tema', cBg:'Sfondo', cFg:'Testo', cPanel:'Pannello', cBorder:'Bordo', cAccent:'Accento', bgEffect:'Effetto di sfondo', intensity:'Intensità', save:'Salva', delete:'Elimina', close:'Chiudi', sharedOdy:'Condiviso con Odysseus' });
+  Object.assign(I18N.pt, { customTheme:'Tema personalizado', themeName:'Nome do tema', cBg:'Fundo', cFg:'Texto', cPanel:'Painel', cBorder:'Borda', cAccent:'Acento', bgEffect:'Efeito de fundo', intensity:'Intensidade', save:'Guardar', delete:'Eliminar', close:'Fechar', sharedOdy:'Partilhado com Odysseus' });
+  Object.assign(I18N.nl, { customTheme:'Eigen thema', themeName:'Themanaam', cBg:'Achtergrond', cFg:'Tekst', cPanel:'Paneel', cBorder:'Rand', cAccent:'Accent', bgEffect:'Achtergrondeffect', intensity:'Intensiteit', save:'Opslaan', delete:'Verwijderen', close:'Sluiten', sharedOdy:'Gedeeld met Odysseus' });
+  Object.assign(I18N.ru, { customTheme:'Своя тема', themeName:'Название темы', cBg:'Фон', cFg:'Текст', cPanel:'Панель', cBorder:'Граница', cAccent:'Акцент', bgEffect:'Фоновый эффект', intensity:'Интенсивность', save:'Сохранить', delete:'Удалить', close:'Закрыть', sharedOdy:'Доступно в Odysseus' });
+  Object.assign(I18N.zh, { customTheme:'自定义主题', themeName:'主题名称', cBg:'背景', cFg:'文本', cPanel:'面板', cBorder:'边框', cAccent:'强调色', bgEffect:'背景效果', intensity:'强度', save:'保存', delete:'删除', close:'关闭', sharedOdy:'与 Odysseus 共享' });
+  Object.assign(I18N.ja, { customTheme:'カスタムテーマ', themeName:'テーマ名', cBg:'背景', cFg:'テキスト', cPanel:'パネル', cBorder:'枠線', cAccent:'アクセント', bgEffect:'背景エフェクト', intensity:'強度', save:'保存', delete:'削除', close:'閉じる', sharedOdy:'Odysseus と共有' });
+  Object.assign(I18N.fr, { fxNone:'Aucun', fxDots:'Points', fxSynapse:'Synapse', fxRain:'Pluie', fxPetals:'Pétales', fxConstell:'Constellations', fxEmbers:'Braises', fxSparkles:'Étincelles', fxPerlin:'Perlin' });
+  Object.assign(I18N.en, { fxNone:'None', fxDots:'Dots', fxSynapse:'Synapse', fxRain:'Rain', fxPetals:'Petals', fxConstell:'Constellations', fxEmbers:'Embers', fxSparkles:'Sparkles', fxPerlin:'Perlin' });
+  Object.assign(I18N.es, { fxNone:'Ninguno', fxDots:'Puntos', fxSynapse:'Sinapsis', fxRain:'Lluvia', fxPetals:'Pétalos', fxConstell:'Constelaciones', fxEmbers:'Brasas', fxSparkles:'Destellos', fxPerlin:'Perlin' });
+  Object.assign(I18N.de, { fxNone:'Keiner', fxDots:'Punkte', fxSynapse:'Synapse', fxRain:'Regen', fxPetals:'Blütenblätter', fxConstell:'Sternbilder', fxEmbers:'Glut', fxSparkles:'Funkeln', fxPerlin:'Perlin' });
+  Object.assign(I18N.it, { fxNone:'Nessuno', fxDots:'Punti', fxSynapse:'Sinapsi', fxRain:'Pioggia', fxPetals:'Petali', fxConstell:'Costellazioni', fxEmbers:'Braci', fxSparkles:'Scintille', fxPerlin:'Perlin' });
+  Object.assign(I18N.pt, { fxNone:'Nenhum', fxDots:'Pontos', fxSynapse:'Sinapse', fxRain:'Chuva', fxPetals:'Pétalas', fxConstell:'Constelações', fxEmbers:'Brasas', fxSparkles:'Brilhos', fxPerlin:'Perlin' });
+  Object.assign(I18N.nl, { fxNone:'Geen', fxDots:'Stippen', fxSynapse:'Synaps', fxRain:'Regen', fxPetals:'Bloemblaadjes', fxConstell:'Sterrenbeelden', fxEmbers:'Sintels', fxSparkles:'Vonken', fxPerlin:'Perlin' });
+  Object.assign(I18N.ru, { fxNone:'Нет', fxDots:'Точки', fxSynapse:'Синапс', fxRain:'Дождь', fxPetals:'Лепестки', fxConstell:'Созвездия', fxEmbers:'Угли', fxSparkles:'Искры', fxPerlin:'Перлин' });
+  Object.assign(I18N.zh, { fxNone:'无', fxDots:'圆点', fxSynapse:'突触', fxRain:'雨', fxPetals:'花瓣', fxConstell:'星座', fxEmbers:'余烬', fxSparkles:'闪光', fxPerlin:'柏林流' });
+  Object.assign(I18N.ja, { fxNone:'なし', fxDots:'ドット', fxSynapse:'シナプス', fxRain:'雨', fxPetals:'花びら', fxConstell:'星座', fxEmbers:'残り火', fxSparkles:'きらめき', fxPerlin:'パーリン' });
+  Object.assign(I18N.fr, { speed:'Vitesse' });
+  Object.assign(I18N.en, { speed:'Speed' });
+  Object.assign(I18N.es, { speed:'Velocidad' });
+  Object.assign(I18N.de, { speed:'Geschwindigkeit' });
+  Object.assign(I18N.it, { speed:'Velocità' });
+  Object.assign(I18N.pt, { speed:'Velocidade' });
+  Object.assign(I18N.nl, { speed:'Snelheid' });
+  Object.assign(I18N.ru, { speed:'Скорость' });
+  Object.assign(I18N.zh, { speed:'速度' });
+  Object.assign(I18N.ja, { speed:'速度' });
+  Object.assign(I18N.fr, { uncensored:'Non censurés', censored:'Censurés / alignés' });
+  Object.assign(I18N.en, { uncensored:'Uncensored', censored:'Censored / aligned' });
+  Object.assign(I18N.es, { uncensored:'Sin censura', censored:'Censurados / alineados' });
+  Object.assign(I18N.de, { uncensored:'Unzensiert', censored:'Zensiert / ausgerichtet' });
+  Object.assign(I18N.it, { uncensored:'Senza censura', censored:'Censurati / allineati' });
+  Object.assign(I18N.pt, { uncensored:'Sem censura', censored:'Censurados / alinhados' });
+  Object.assign(I18N.nl, { uncensored:'Ongecensureerd', censored:'Gecensureerd / uitgelijnd' });
+  Object.assign(I18N.ru, { uncensored:'Без цензуры', censored:'С цензурой / выровненные' });
+  Object.assign(I18N.zh, { uncensored:'无审查', censored:'有审查 / 对齐' });
+  Object.assign(I18N.ja, { uncensored:'無検閲', censored:'検閲済み / 整合' });
+  Object.assign(I18N.fr, { llmLog:'Logs llama-server', logShow:'afficher', logHide:'masquer' });
+  Object.assign(I18N.en, { llmLog:'llama-server logs', logShow:'show', logHide:'hide' });
+  Object.assign(I18N.es, { llmLog:'Registros llama-server', logShow:'mostrar', logHide:'ocultar' });
+  Object.assign(I18N.de, { llmLog:'llama-server-Logs', logShow:'anzeigen', logHide:'ausblenden' });
+  Object.assign(I18N.it, { llmLog:'Log llama-server', logShow:'mostra', logHide:'nascondi' });
+  Object.assign(I18N.pt, { llmLog:'Registos llama-server', logShow:'mostrar', logHide:'ocultar' });
+  Object.assign(I18N.nl, { llmLog:'llama-server-logs', logShow:'tonen', logHide:'verbergen' });
+  Object.assign(I18N.ru, { llmLog:'Логи llama-server', logShow:'показать', logHide:'скрыть' });
+  Object.assign(I18N.zh, { llmLog:'llama-server 日志', logShow:'显示', logHide:'隐藏' });
+  Object.assign(I18N.ja, { llmLog:'llama-server ログ', logShow:'表示', logHide:'非表示' });
+  Object.assign(I18N.fr, { presets:'Presets de réglages', presetName:'nom…', presetSave:'Sauver' });
+  Object.assign(I18N.en, { presets:'Setting presets', presetName:'name…', presetSave:'Save' });
+  Object.assign(I18N.es, { presets:'Ajustes guardados', presetName:'nombre…', presetSave:'Guardar' });
+  Object.assign(I18N.de, { presets:'Einstellungs-Presets', presetName:'Name…', presetSave:'Speichern' });
+  Object.assign(I18N.it, { presets:'Preset impostazioni', presetName:'nome…', presetSave:'Salva' });
+  Object.assign(I18N.pt, { presets:'Predefinições', presetName:'nome…', presetSave:'Guardar' });
+  Object.assign(I18N.nl, { presets:'Instellingen-presets', presetName:'naam…', presetSave:'Opslaan' });
+  Object.assign(I18N.ru, { presets:'Пресеты настроек', presetName:'имя…', presetSave:'Сохранить' });
+  Object.assign(I18N.zh, { presets:'设置预设', presetName:'名称…', presetSave:'保存' });
+  Object.assign(I18N.ja, { presets:'設定プリセット', presetName:'名前…', presetSave:'保存' });
+  Object.assign(I18N.fr, { jsonIO:'Import / Export JSON', jsonThemes:'Thèmes — JSON', jsonPresets:'Presets — JSON', jsonCopy:'Copier', jsonSave:'Enregistrer .json', jsonLoad:'Charger .json', jsonImport:'Importer', jsonInvalid:'JSON invalide.', jsonNone:'Rien de valide trouvé.' });
+  Object.assign(I18N.en, { jsonIO:'Import / Export JSON', jsonThemes:'Themes — JSON', jsonPresets:'Presets — JSON', jsonCopy:'Copy', jsonSave:'Save .json', jsonLoad:'Load .json', jsonImport:'Import', jsonInvalid:'Invalid JSON.', jsonNone:'Nothing valid found.' });
+  Object.assign(I18N.es, { jsonIO:'Importar / Exportar JSON', jsonThemes:'Temas — JSON', jsonPresets:'Ajustes — JSON', jsonCopy:'Copiar', jsonSave:'Guardar .json', jsonLoad:'Cargar .json', jsonImport:'Importar', jsonInvalid:'JSON no válido.', jsonNone:'Nada válido encontrado.' });
+  Object.assign(I18N.de, { jsonIO:'Import / Export JSON', jsonThemes:'Themen — JSON', jsonPresets:'Presets — JSON', jsonCopy:'Kopieren', jsonSave:'Speichern .json', jsonLoad:'Laden .json', jsonImport:'Importieren', jsonInvalid:'Ungültiges JSON.', jsonNone:'Nichts Gültiges gefunden.' });
+  Object.assign(I18N.it, { jsonIO:'Importa / Esporta JSON', jsonThemes:'Temi — JSON', jsonPresets:'Preset — JSON', jsonCopy:'Copia', jsonSave:'Salva .json', jsonLoad:'Carica .json', jsonImport:'Importa', jsonInvalid:'JSON non valido.', jsonNone:'Niente di valido trovato.' });
+  Object.assign(I18N.pt, { jsonIO:'Importar / Exportar JSON', jsonThemes:'Temas — JSON', jsonPresets:'Predefinições — JSON', jsonCopy:'Copiar', jsonSave:'Guardar .json', jsonLoad:'Carregar .json', jsonImport:'Importar', jsonInvalid:'JSON inválido.', jsonNone:'Nada válido encontrado.' });
+  Object.assign(I18N.nl, { jsonIO:'Import / Export JSON', jsonThemes:"Thema's — JSON", jsonPresets:'Presets — JSON', jsonCopy:'Kopiëren', jsonSave:'Opslaan .json', jsonLoad:'Laden .json', jsonImport:'Importeren', jsonInvalid:'Ongeldige JSON.', jsonNone:'Niets geldigs gevonden.' });
+  Object.assign(I18N.ru, { jsonIO:'Импорт / Экспорт JSON', jsonThemes:'Темы — JSON', jsonPresets:'Пресеты — JSON', jsonCopy:'Копировать', jsonSave:'Сохранить .json', jsonLoad:'Загрузить .json', jsonImport:'Импорт', jsonInvalid:'Неверный JSON.', jsonNone:'Ничего подходящего не найдено.' });
+  Object.assign(I18N.zh, { jsonIO:'导入 / 导出 JSON', jsonThemes:'主题 — JSON', jsonPresets:'预设 — JSON', jsonCopy:'复制', jsonSave:'保存 .json', jsonLoad:'加载 .json', jsonImport:'导入', jsonInvalid:'无效的 JSON。', jsonNone:'未找到有效内容。' });
+  Object.assign(I18N.ja, { jsonIO:'インポート / エクスポート JSON', jsonThemes:'テーマ — JSON', jsonPresets:'プリセット — JSON', jsonCopy:'コピー', jsonSave:'保存 .json', jsonLoad:'読み込み .json', jsonImport:'インポート', jsonInvalid:'無効な JSON。', jsonNone:'有効な項目がありません。' });
+  Object.assign(I18N.fr, { cardMon:'État & test' });
+  Object.assign(I18N.en, { cardMon:'Status & test' });
+  Object.assign(I18N.es, { cardMon:'Estado y prueba' });
+  Object.assign(I18N.de, { cardMon:'Status & Test' });
+  Object.assign(I18N.it, { cardMon:'Stato e test' });
+  Object.assign(I18N.pt, { cardMon:'Estado e teste' });
+  Object.assign(I18N.nl, { cardMon:'Status & test' });
+  Object.assign(I18N.ru, { cardMon:'Статус и тест' });
+  Object.assign(I18N.zh, { cardMon:'状态与测试' });
+  Object.assign(I18N.ja, { cardMon:'状態とテスト' });
+  Object.assign(I18N.fr, { dragHint:'Glisser pour réorganiser' });
+  Object.assign(I18N.en, { dragHint:'Drag to rearrange' });
+  Object.assign(I18N.es, { dragHint:'Arrastra para reorganizar' });
+  Object.assign(I18N.de, { dragHint:'Zum Umordnen ziehen' });
+  Object.assign(I18N.it, { dragHint:'Trascina per riordinare' });
+  Object.assign(I18N.pt, { dragHint:'Arrasta para reorganizar' });
+  Object.assign(I18N.nl, { dragHint:'Sleep om te herschikken' });
+  Object.assign(I18N.ru, { dragHint:'Перетащите, чтобы изменить порядок' });
+  Object.assign(I18N.zh, { dragHint:'拖动以重新排列' });
+  Object.assign(I18N.ja, { dragHint:'ドラッグして並べ替え' });
+  let LANG = 'en';
+  const tr = k => { const d = I18N[LANG] || I18N.en; return d[k] != null ? d[k] : (I18N.en[k] != null ? I18N.en[k] : k); };
+
+  function renderStatus(){
+    const s = lastStatus;
+    const llm = !s ? '…' : (s.llmUp ? (s.llm || '') : tr('llmOffline'));
+    $('llm-status').textContent = 'LLM : ' + llm;
+    $('llm-led').className = 'led' + (s && s.llmUp ? '' : ' off');
+    const ody = !s ? '…' : (s.odyUp ? tr('odyOnline') : tr('odyOffline'));
+    $('ody-status').textContent = 'Odysseus : ' + ody;
+    $('ody-led').className = 'led' + (s && s.odyUp ? '' : ' off');
+    const vu=(s&&s.vramU)||0, vt=(s&&s.vramT)||0, pct=vt?Math.round(vu/vt*100):0;
+    const vf=$('vram-fill'); if(vf){ vf.style.width=pct+'%'; vf.className='vram-fill'+(pct>=90?' hot':(pct>=75?' warn':'')); }
+    const vx=$('vram-txt'); if(vx) vx.textContent = vt ? ('VRAM '+vu+' / '+vt+' Mo · '+pct+'%') : 'VRAM —';
+  }
+
+  function applyLang(lang){
+    if (!I18N[lang]) lang = 'en';
+    LANG = lang;
+    document.documentElement.lang = lang;
+    document.querySelectorAll('[data-i18n]').forEach(el => { el.textContent = tr(el.getAttribute('data-i18n')); });
+    document.querySelectorAll('[data-i18n-ph]').forEach(el => { el.placeholder = tr(el.getAttribute('data-i18n-ph')); });
+    document.querySelectorAll('[data-i18n-title]').forEach(el => { el.title = tr(el.getAttribute('data-i18n-title')); });
+    if (_scanned && !MODELS.length) {
+      const sel = $('model'); if (sel) { sel.innerHTML=''; const o=document.createElement('option'); o.textContent=tr('noModels'); sel.appendChild(o); }
+    }
+    renderStatus();
+    renderVer();   // la ligne version llama + son bouton sont dynamiques (pas de data-i18n)
+    try { localStorage.setItem('ody-dash-lang', lang); } catch(e){}
+  }
+
+  // ----- Thèmes -----
+  let CUSTOM = {};   // thèmes custom partagés avec Odysseus (poussés par le backend PS depuis user_prefs.json)
+  function setTheme(name){
+    const t = CUSTOM[name] || THEMES[name]; if (!t) return;
+    const r = document.documentElement.style;
+    r.setProperty('--bg', t.bg); r.setProperty('--fg', t.fg); r.setProperty('--panel', t.panel);
+    r.setProperty('--border', t.border); r.setProperty('--red', t.red); r.setProperty('--accent', t.border);
+    // Chromium ne repeint pas ::-webkit-slider-thumb sur un changement de var CSS -> on reinjecte la couleur LITTERALE (force le repaint)
+    let ts = document.getElementById('thumb-theme'); if (!ts) { ts = document.createElement('style'); ts.id = 'thumb-theme'; document.head.appendChild(ts); }
+    ts.textContent = 'input[type=range]::-webkit-slider-thumb{background:'+t.fg+';box-shadow:0 0 6px '+t.fg+'}input[type=range]::-moz-range-thumb{background:'+t.fg+'}::-webkit-scrollbar-thumb{background:'+t.border+'}';
+    applyBgEffectColor(''); applyBgEffectIntensity(t.bgEffectIntensity!=null?t.bgEffectIntensity:1); applyBgEffectSpeed(t.bgEffectSpeed!=null?t.bgEffectSpeed:1); applyBgPattern(t.bgPattern || PATTERN[name] || 'none');
+    try { localStorage.setItem('ody-dash-theme', name); } catch(e){}
+  }
+  const tsel = $('theme-select');
+  function rebuildThemes(){
+    const cur = tsel.value;
+    tsel.innerHTML='';
+    Object.keys(THEMES).forEach(n => { const o=document.createElement('option'); o.value=n; o.textContent=(n==='dark'?'original':(n==='gpt'?'GPT':n)); tsel.appendChild(o); });
+    const ck = Object.keys(CUSTOM);
+    if(ck.length){ const og=document.createElement('optgroup'); og.label='Perso'; ck.forEach(n=>{ const o=document.createElement('option'); o.value=n; o.textContent=n; og.appendChild(o); }); tsel.appendChild(og); }
+    if(cur && (THEMES[cur]||CUSTOM[cur])) tsel.value=cur;
+  }
+  rebuildThemes();
+  // backend PS -> liste des thèmes custom (depuis user_prefs.json, partagés avec Odysseus)
+  window.dashCustomThemes = function(d){
+    CUSTOM = (d && d.themes) || {};
+    rebuildThemes();
+    let sv=null; try{ sv=localStorage.getItem('ody-dash-theme'); }catch(e){}
+    if(sv && CUSTOM[sv] && tsel.value!==sv){ tsel.value=sv; setTheme(sv); }
+  };
+  let savedTheme = 'dark';
+  try { savedTheme = localStorage.getItem('ody-dash-theme') || 'dark'; } catch(e){}
+  if (!THEMES[savedTheme] && !CUSTOM[savedTheme]) savedTheme = 'dark';
+  tsel.value = savedTheme;
+  tsel.addEventListener('change', () => setTheme(tsel.value));
+  setTheme(savedTheme);
+
+  // ----- Éditeur de thème (compatible Odysseus) -----
+  function toHex6(v){ v=(v||'').trim();
+    if(/^#[0-9a-f]{6}$/i.test(v)) return v;
+    if(/^#[0-9a-f]{3}$/i.test(v)) return '#'+v.slice(1).split('').map(c=>c+c).join('');
+    const m=v.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/i);
+    if(m){ return '#'+[1,2,3].map(i=>(+m[i]).toString(16).padStart(2,'0')).join(''); }
+    return '#222222';
+  }
+  const ted = $('theme-editor');
+  const tedIds = ['bg','fg','panel','border','red'];
+  const colorVals = {};
+  function hsv2hex(h,s,v){ s/=100; v/=100; const c=v*s, x=c*(1-Math.abs((h/60)%2-1)), m=v-c; let r,g,b;
+    if(h<60){r=c;g=x;b=0}else if(h<120){r=x;g=c;b=0}else if(h<180){r=0;g=c;b=x}else if(h<240){r=0;g=x;b=c}else if(h<300){r=x;g=0;b=c}else{r=c;g=0;b=x}
+    const f=n=>('0'+Math.round((n+m)*255).toString(16)).slice(-2); return '#'+f(r)+f(g)+f(b); }
+  function hex2hsv(hex){ hex=toHex6(hex); const r=parseInt(hex.slice(1,3),16)/255,g=parseInt(hex.slice(3,5),16)/255,b=parseInt(hex.slice(5,7),16)/255;
+    const mx=Math.max(r,g,b),mn=Math.min(r,g,b),d=mx-mn; let h=0; if(d){ if(mx===r)h=((g-b)/d)%6; else if(mx===g)h=(b-r)/d+2; else h=(r-g)/d+4; h*=60; if(h<0)h+=360; }
+    return {h:h, s:mx?d/mx*100:0, v:mx*100}; }
+  let pickK='bg', pH=0, pS=0, pV=0;
+  const sv=$('ted-sv'), svp=$('ted-sv-ptr'), hue=$('ted-hue'), huep=$('ted-hue-ptr');
+  function renderPicker(){ sv.style.background='linear-gradient(to top,#000,rgba(0,0,0,0)),linear-gradient(to right,#fff,hsl('+pH+',100%,50%))'; svp.style.left=pS+'%'; svp.style.top=(100-pV)+'%'; huep.style.left=(pH/360*100)+'%'; }
+  function setColor(k,hex){ hex=toHex6(hex); colorVals[k]=hex; const sw=$('ted-'+k+'-sw'); if(sw) sw.style.background=hex; $('ted-'+k+'-h').value=hex.toUpperCase(); }
+  function selectActive(k){ pickK=k; const c=hex2hsv(colorVals[k]||'#000000'); pH=c.h; pS=c.s; pV=c.v; renderPicker();
+    document.querySelectorAll('.ted-grid label').forEach(l=>l.classList.toggle('on', l.getAttribute('data-k')===k)); }
+  function curColors(){ const c=Object.assign({},colorVals); c.bgPattern=$('ted-pattern').value; c.bgEffectIntensity=+$('ted-intensity').value; c.bgEffectSpeed=+$('ted-speed').value; return c; }
+  function previewCustom(){ const c=curColors(), r=document.documentElement.style;
+    r.setProperty('--bg',c.bg); r.setProperty('--fg',c.fg); r.setProperty('--panel',c.panel); r.setProperty('--border',c.border); r.setProperty('--red',c.red); r.setProperty('--accent',c.border);
+    let t=document.getElementById('thumb-theme'); if(!t){t=document.createElement('style');t.id='thumb-theme';document.head.appendChild(t);}
+    t.textContent='input[type=range]::-webkit-slider-thumb{background:'+c.fg+';box-shadow:0 0 6px '+c.fg+'}input[type=range]::-moz-range-thumb{background:'+c.fg+'}::-webkit-scrollbar-thumb{background:'+c.border+'}';
+    applyBgEffectColor(''); applyBgEffectIntensity(c.bgEffectIntensity!=null?c.bgEffectIntensity:1); applyBgEffectSpeed(c.bgEffectSpeed!=null?c.bgEffectSpeed:1); applyBgPattern(c.bgPattern||'none');
+    updateFxSliders();
+  }
+  function previewFx(){ applyBgEffectIntensity(+$('ted-intensity').value); applyBgEffectSpeed(+$('ted-speed').value); }
+  function updateFxSliders(){
+    const p=$('ted-pattern').value;
+    const off=(el,dis)=>{ el.disabled=dis; const row=el.closest('.ted-fx'); if(row){ row.style.opacity=dis?'.38':''; row.style.pointerEvents=dis?'none':''; } };
+    off($('ted-intensity'), p==='none');
+    off($('ted-speed'), p==='none'||p==='dots');
+  }
+  function pickApply(){ setColor(pickK, hsv2hex(pH,pS,pV)); previewCustom(); }
+  function openEditor(){
+    const cs=getComputedStyle(document.documentElement);
+    tedIds.forEach(k=>setColor(k, cs.getPropertyValue('--'+k)));
+    const cu=CUSTOM[tsel.value];
+    $('ted-pattern').value = (cu && cu.bgPattern) || PATTERN[tsel.value] || 'none';
+    $('ted-intensity').value = (cu && cu.bgEffectIntensity!=null) ? cu.bgEffectIntensity : 1;
+    $('ted-speed').value = (cu && cu.bgEffectSpeed!=null) ? cu.bgEffectSpeed : 1;
+    $('ted-name').value = cu ? tsel.value : '';
+    $('ted-del').style.display = cu ? '' : 'none';
+    selectActive('bg'); updateFxSliders(); ted.hidden=false;
+  }
+  function closeEditor(){ ted.hidden=true; setTheme(tsel.value); }
+  $('theme-edit').addEventListener('click', ()=>{ if(ted.hidden) openEditor(); else closeEditor(); });
+  let _tedDown=false;
+  ted.addEventListener('mousedown', e=>{ _tedDown=(e.target===ted); });
+  ted.addEventListener('click', e=>{ if(e.target===ted && _tedDown) closeEditor(); });
+  $('ted-close').addEventListener('click', closeEditor);
+  $('ted-pattern').addEventListener('change', previewCustom);
+  $('ted-intensity').addEventListener('input', previewFx);
+  $('ted-speed').addEventListener('input', previewFx);
+  document.querySelectorAll('.ted-grid label').forEach(l=>l.addEventListener('click', ()=>selectActive(l.getAttribute('data-k'))));
+  tedIds.forEach(k=>{ $('ted-'+k+'-h').addEventListener('input', ()=>{ const v=($('ted-'+k+'-h').value||'').trim(); if(/^#[0-9a-f]{6}$/i.test(v)){ setColor(k,v); if(k===pickK) selectActive(k); previewCustom(); } }); });
+  function svDrag(e){ const r=sv.getBoundingClientRect(); pS=Math.max(0,Math.min(100,(e.clientX-r.left)/r.width*100)); pV=Math.max(0,Math.min(100,100-(e.clientY-r.top)/r.height*100)); renderPicker(); pickApply(); }
+  sv.addEventListener('pointerdown', e=>{ sv.setPointerCapture(e.pointerId); svDrag(e); const mv=ev=>svDrag(ev), up=()=>{sv.removeEventListener('pointermove',mv); sv.removeEventListener('pointerup',up);}; sv.addEventListener('pointermove',mv); sv.addEventListener('pointerup',up); });
+  function hueDrag(e){ const r=hue.getBoundingClientRect(); pH=Math.max(0,Math.min(360,(e.clientX-r.left)/r.width*360)); renderPicker(); pickApply(); }
+  hue.addEventListener('pointerdown', e=>{ hue.setPointerCapture(e.pointerId); hueDrag(e); const mv=ev=>hueDrag(ev), up=()=>{hue.removeEventListener('pointermove',mv); hue.removeEventListener('pointerup',up);}; hue.addEventListener('pointermove',mv); hue.addEventListener('pointerup',up); });
+  $('ted-save').addEventListener('click', ()=>{
+    const name=($('ted-name').value||'').trim(); if(!name){ $('ted-name').focus(); return; }
+    const c=curColors(); send({type:'savetheme', name, colors:c});
+    CUSTOM[name]=c; rebuildThemes(); tsel.value=name; setTheme(name); ted.hidden=true;
+  });
+  $('ted-del').addEventListener('click', ()=>{
+    const name=tsel.value; if(!CUSTOM[name]) return;
+    send({type:'deltheme', name}); delete CUSTOM[name]; rebuildThemes();
+    tsel.value='dark'; setTheme('dark'); ted.hidden=true;
+  });
+
+  // ----- Modèles / presets / commande -----
+  const fmt = (v,d) => (d ? Number(v).toFixed(d) : String(v));
+  function setSlider(sid, vid, val, dec){ const S=$(sid); if(val!==undefined&&val!==null) S.value=val; $(vid).textContent = fmt(S.value, dec); }
+  function applyPreset(i){
+    const m = MODELS[i]; if (!m) return;
+    $('fam').textContent = m.family;
+    setSlider('s-temp','v-temp',m.t,2); setSlider('s-topp','v-topp',m.p,2); setSlider('s-topk','v-topk',m.k,0);
+    setSlider('s-minp','v-minp',m.mp,2); setSlider('s-rep','v-rep',m.rp,2);
+    $('ctx').value = m.ctx; $('ngl').value = 99; $('port').value = 8000;
+    updateCmd(); checkCtx();
+  }
+  function modelB(name){ const mm=(name||'').toLowerCase().match(/(\d+(?:\.\d+)?)\s*b/); let b=mm?parseFloat(mm[1]):0; if(!b && /nemo/.test((name||'').toLowerCase())) b=12; return b; }
+  function checkCtx(){
+    const w=$('ctx-warn'); if(!w) return; const m=MODELS[$('model').value];
+    if(!m){ w.hidden=true; return; }
+    const b=modelB(m.name), lim=(b>=13?8192:16384), cur=+$('ctx').value||0;
+    if(cur>lim){ w.hidden=false; w.title='Contexte '+cur+' élevé pour un modèle '+(b||'?')+'B sur 12 Go de VRAM — risque de débordement (lenteur). Conseillé ≤ '+lim+'.'; }
+    else w.hidden=true;
+  }
+  function updateCmd(){
+    const i = $('model').value, m = MODELS[i];
+    const g = id => $(id).value;
+    const path = m ? m.path : '…';
+    let c = `"${EXE}" -m "${path}" -ngl ${g('ngl')} -c ${g('ctx')} --temp ${g('s-temp')} --top-p ${g('s-topp')} --top-k ${g('s-topk')} --min-p ${g('s-minp')} --repeat-penalty ${g('s-rep')} --host 0.0.0.0 --port ${g('port')}`;
+    if ($('fast').checked) c += ' --jinja --reasoning off';
+    $('cmd').textContent = c;
+  }
+
+  // PS -> JS : liste des modèles
+  window.dashInit = function(data){
+    MODELS = (data && data.models) || []; EXE = (data && data.exe) || 'llama-server'; _scanned = true;
+    const sel = $('model'); sel.innerHTML = '';
+    if (!MODELS.length){ const o=document.createElement('option'); o.textContent=tr('noModels'); sel.appendChild(o); $('fam').textContent=''; $('cmd').textContent='—'; return; }
+    const _famTag = f => ({'Mistral Nemo':'Mistral','Mistral Small':'M-Small','LFM (Liquid)':'LFM','Qwen Coder':'QwenC','Defaut':'Autre'}[f] || (f||'?').replace(/\s+/g,''));
+    const _isUncen = n => /abliterat|uncensor|uncen|de-?censor|unfilter|unalign|unlock|jailb|heretic|unhinged|unleashed|dolphin|amoral|aggressive|lewd|nsfw|toxic|pygmalion|mytho|maid|magnum|cydonia|rocinante|kunoichi/i.test(n||'');
+    const _mkOpt = (m,idx) => { const o=document.createElement('option'); o.value=idx; const tag='['+_famTag(m.family)+']'; o.textContent=tag+' '.repeat(Math.max(1,11-tag.length))+m.name; return o; };
+    [ {lab:'🔓 '+tr('uncensored'), f:m=>_isUncen(m.name)},
+      {lab:'🔒 '+tr('censored'),   f:m=>!_isUncen(m.name)} ].forEach(g=>{
+      const items=MODELS.map((m,idx)=>[m,idx]).filter(x=>g.f(x[0]));
+      if(!items.length) return;
+      const og=document.createElement('optgroup'); og.label=g.lab;
+      items.forEach(x=>og.appendChild(_mkOpt(x[0],x[1])));
+      sel.appendChild(og);
+    });
+    sel.value = 0; applyPreset(0);
+  };
+  // PS -> JS : statut LLM + Odysseus (textes reconstruits selon la langue à partir des booléens)
+  window.dashStatus = function(s){ if (s) lastStatus = s; renderStatus(); };
+  // PS -> JS : réponse du test
+  window.dashTest = function(s){ if (s && s.test) { var k={'__TESTING__':'testing','__TEST_NOSERVER__':'testNoServer','__TEST_EMPTY__':'testEmpty'}[s.test]; $('test-out').textContent = k ? tr(k) : s.test; $('test-out').hidden=false; syncTest(); } };
+  // PS -> JS : logs llama-server (sans terminal)
+  window.dashLog = function(s){ const el=$('llm-log'); if(!el) return; const log=(s&&s.log)||''; const atBottom = el.scrollHeight-el.scrollTop-el.clientHeight < 24; el.textContent = log; if(atBottom) el.scrollTop = el.scrollHeight; };
+
+  // ----- Version / mise à jour de llama-server (script partagé Update-LlamaServer.ps1) -----
+  // Flux : clic = check -> si MAJ dispo le bouton devient « Mettre à jour -> bXXXX » -> 2e clic = update.
+  // Jamais de MAJ silencieuse ; états poussés par le backend PS via window.dashLlama.
+  let VER = { st:'idle' };   // idle | checking | uptodate | available | updating | updated | error
+  function renderVer(){
+    const el=$('llama-ver'), b=$('llama-check-btn'); if(!el||!b) return;
+    const t=(k,o)=>{ let s=tr(k); if(o) for(const x in o) s=s.replace('{'+x+'}',o[x]); return s; };
+    let txt='', lab=tr('btnVerCheck'), dis=false;
+    if (VER.st==='checking'){ txt=t('verChecking'); dis=true; }
+    else if (VER.st==='uptodate') txt='llama.cpp : '+t('verUpToDate',{b:VER.local||VER.remote||'?'});
+    else if (VER.st==='available'){ txt='llama.cpp : '+t('verAvail',{b:VER.remote||'?',l:VER.local||'?'}); lab=t('btnVerUpdate')+' '+(VER.tag||('b'+(VER.remote||''))); }
+    else if (VER.st==='updating'){ txt=t('verUpdating'); dis=true; }
+    else if (VER.st==='updated'){ txt='llama.cpp : '+t('verUpdated',{b:VER.local||'?'})+(VER.wasRunning?(' — '+t('verRestart')):''); }
+    else if (VER.st==='error') txt=t('verError');
+    else txt=t('verIdle');
+    el.textContent=txt; b.textContent=lab; b.disabled=dis;
+  }
+  window.dashLlama = function(d){ if(!d||!d.state) return; VER={ st:d.state, local:d.local, remote:d.remote, tag:d.tag, wasRunning:!!d.wasRunning }; renderVer(); };
+  function syncLog(){ const el=$('llm-log'),t=$('log-toggle'); if(el&&t) t.textContent = tr(el.hidden?'logShow':'logHide'); }
+  function syncTest(){ const el=$('test-out'),t=$('test-toggle'); if(el&&t) t.textContent = tr(el.hidden?'logShow':'logHide'); }
+  if($('test-toggle')) $('test-toggle').addEventListener('click', ()=>{ const el=$('test-out'); el.hidden=!el.hidden; syncTest(); });
+  $('log-toggle').addEventListener('click', ()=>{ const el=$('llm-log'); el.hidden=!el.hidden; if(!el.hidden) el.scrollTop=el.scrollHeight; syncLog(); });
+
+  // interactions
+  $('model').addEventListener('change', e => applyPreset(+e.target.value));
+  ['ctx','ngl','port'].forEach(id=>$(id).addEventListener('input', ()=>{ updateCmd(); if(id==='ctx') checkCtx(); }));
+  ['s-temp','s-topp','s-topk','s-minp','s-rep'].forEach((id,k)=>{
+    const v = ['v-temp','v-topp','v-topk','v-minp','v-rep'][k], d = [2,2,0,2,2][k];
+    $(id).addEventListener('input', ()=>{ $(v).textContent = fmt($(id).value, d); updateCmd(); });
+  });
+  ['ctx','ngl','port'].forEach(id => $(id).addEventListener('input', updateCmd));
+  $('fast').addEventListener('change', updateCmd);
+
+  // ----- Presets de réglages (sauvegardables, locaux au dashboard, localStorage) -----
+  const PKEY='ody-dash-presets';
+  function loadPresetStore(){ try{ return JSON.parse(localStorage.getItem(PKEY)||'{}')||{}; }catch(e){ return {}; } }
+  function savePresetStore(o){ try{ localStorage.setItem(PKEY, JSON.stringify(o)); }catch(e){} }
+  function refreshPresets(sel){ const o=loadPresetStore(), s=$('preset-sel'); s.innerHTML='';
+    const o0=document.createElement('option'); o0.value=''; o0.textContent='—'; s.appendChild(o0);
+    Object.keys(o).forEach(n=>{ const op=document.createElement('option'); op.value=n; op.textContent=n; s.appendChild(op); });
+    if(sel&&o[sel]) s.value=sel; }
+  function curSettings(){ return { t:+$('s-temp').value, p:+$('s-topp').value, k:+$('s-topk').value, mp:+$('s-minp').value, rp:+$('s-rep').value, ctx:+$('ctx').value, ngl:+$('ngl').value, port:+$('port').value, fast:$('fast').checked }; }
+  function applySettings(p){ if(!p) return; setSlider('s-temp','v-temp',p.t,2); setSlider('s-topp','v-topp',p.p,2); setSlider('s-topk','v-topk',p.k,0); setSlider('s-minp','v-minp',p.mp,2); setSlider('s-rep','v-rep',p.rp,2);
+    if(p.ctx!=null)$('ctx').value=p.ctx; if(p.ngl!=null)$('ngl').value=p.ngl; if(p.port!=null)$('port').value=p.port; $('fast').checked=!!p.fast; updateCmd(); checkCtx(); }
+  $('preset-save').addEventListener('click', ()=>{ const n=(($('preset-name').value||'').trim())||$('preset-sel').value; if(!n){ $('preset-name').focus(); return; } const o=loadPresetStore(); o[n]=curSettings(); savePresetStore(o); refreshPresets(n); $('preset-name').value=''; });
+  $('preset-del').addEventListener('click', ()=>{ const n=$('preset-sel').value; if(!n) return; const o=loadPresetStore(); delete o[n]; savePresetStore(o); refreshPresets(); });
+  $('preset-sel').addEventListener('change', ()=>{ const o=loadPresetStore(); applySettings(o[$('preset-sel').value]); });
+  refreshPresets();
+
+  // ----- Import / Export JSON (thèmes + presets, comme Odysseus : fichier .json + JSON visible) -----
+  let jsonKind='themes';
+  const jm=$('json-modal');
+  function openJson(kind){ jsonKind=kind; $('json-err').style.display='none';
+    $('json-title').textContent = tr(kind==='themes'?'jsonThemes':'jsonPresets');
+    $('json-area').value = JSON.stringify(kind==='themes'? CUSTOM : loadPresetStore(), null, 2);
+    jm.hidden=false; }
+  function closeJson(){ jm.hidden=true; }
+  function importThemes(obj){ let src={};
+    if(obj && obj.colors){ src[(obj.name||'imported')]=Object.assign({}, obj.colors, obj.bgPattern?{bgPattern:obj.bgPattern}:{}); }
+    else { src=obj||{}; }
+    const req=['bg','fg','panel','border','red'], hex=/^#[0-9a-fA-F]{6}$/; let n=0;
+    for(const k in src){ const c=src[k]; if(!c||typeof c!=='object') continue; const col=c.colors||c;
+      if(req.some(x=>!hex.test((col[x]||'')))) continue;
+      const e={bg:col.bg,fg:col.fg,panel:col.panel,border:col.border,red:col.red};
+      const pat=col.bgPattern||c.bgPattern; if(pat) e.bgPattern=pat;
+      if(col.bgEffectIntensity!=null) e.bgEffectIntensity=col.bgEffectIntensity;
+      if(col.bgEffectSpeed!=null) e.bgEffectSpeed=col.bgEffectSpeed;
+      CUSTOM[k]=e; send({type:'savetheme', name:k, colors:e}); n++; }
+    return n; }
+  function importPresets(obj){ if(!obj||typeof obj!=='object') return 0; const store=loadPresetStore(); let n=0;
+    for(const k in obj){ const p=obj[k]; if(p&&typeof p==='object'){ store[k]=p; n++; } } if(n){ savePresetStore(store); refreshPresets(); } return n; }
+  if($('ted-io')) $('ted-io').addEventListener('click', ()=> openJson('themes'));
+  if($('preset-io')) $('preset-io').addEventListener('click', ()=> openJson('presets'));
+  $('json-close').addEventListener('click', closeJson);
+  $('json-copy').addEventListener('click', async ()=>{ const t=$('json-area'); try{ await navigator.clipboard.writeText(t.value); }catch(e){ t.select(); try{document.execCommand('copy');}catch(_){} } const b=$('json-copy'), o=b.textContent; b.textContent='✓'; setTimeout(()=>{b.textContent=o;},1200); });
+  $('json-savefile').addEventListener('click', ()=>{ const blob=new Blob([$('json-area').value],{type:'application/json'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='odysseus-'+jsonKind+'.json'; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(url),1000); });
+  $('json-loadfile').addEventListener('click', ()=> $('json-file').click());
+  $('json-file').addEventListener('change', e=>{ const f=e.target.files&&e.target.files[0]; if(!f) return; const r=new FileReader(); r.onload=()=>{ $('json-area').value=String(r.result||''); $('json-err').style.display='none'; }; r.readAsText(f); e.target.value=''; });
+  $('json-import').addEventListener('click', ()=>{ const err=$('json-err'); err.style.display='none'; let obj;
+    try{ obj=JSON.parse(($('json-area').value||'').trim()); }catch(e){ err.textContent=tr('jsonInvalid'); err.style.display='block'; return; }
+    const n = jsonKind==='themes'? importThemes(obj) : importPresets(obj);
+    if(!n){ err.textContent=tr('jsonNone'); err.style.display='block'; return; }
+    if(jsonKind==='themes') rebuildThemes(); closeJson(); });
+  let _jmDown=false; jm.addEventListener('mousedown', e=>{ _jmDown=(e.target===jm); });
+  jm.addEventListener('click', e=>{ if(e.target===jm && _jmDown) closeJson(); });
+
+  document.querySelectorAll('button[data-act]').forEach(b => b.addEventListener('click', ()=>{
+    const act = b.dataset.act, g = id => $(id).value;
+    if (act === 'reco') { applyPreset(+$('model').value); }
+    else if (act === 'launch') {
+      const m = MODELS[$('model').value]; if (!m) { $('llm-status').textContent = 'LLM : ' + tr('pickModel'); return; }
+      send({ type:'launch', path:m.path, ngl:g('ngl'), ctx:g('ctx'), temp:g('s-temp'), topp:g('s-topp'),
+             topk:g('s-topk'), minp:g('s-minp'), rep:g('s-rep'), port:g('port'), fast:$('fast').checked });
+      $('llm-status').textContent = 'LLM : ' + tr('launching');
+      $('llm-log').hidden=false; syncLog();
+    }
+    else if (act === 'stop') { send({type:'stop'}); $('llm-status').textContent = 'LLM : ' + tr('stopping'); }
+    else if (act === 'test') { send({type:'test', lang: LANG}); $('test-out').hidden=false; syncTest(); $('test-out').textContent = tr('testing'); }
+    else if (act === 'llama-check') {
+      if (VER.st==='available'){ VER={st:'updating'}; renderVer(); send({type:'llama', act:'update'}); }          // 2e clic = confirmation
+      else if (VER.st!=='checking' && VER.st!=='updating'){ VER={st:'checking'}; renderVer(); send({type:'llama', act:'check'}); }
+    }
+    else if (act === 'ody-start')  { send({type:'ody', act:'start'}); }
+    else if (act === 'ody-stop')   { send({type:'ody', act:'stop'}); }
+    else if (act === 'ody-update') { send({type:'ody', act:'update'}); }
+    else if (act === 'ody-open')   { send({type:'ody', act:'open'}); }
+  }));
+
+  // ----- Langue (sélecteur) -----
+  const lsel = $('lang-select');
+  Object.keys(LANG_NAMES).forEach(code => { const o=document.createElement('option'); o.value=code; o.textContent=LANG_NAMES[code]; lsel.appendChild(o); });
+  let savedLang = null;
+  try { savedLang = localStorage.getItem('ody-dash-lang'); } catch(e){}
+  if (!savedLang || !I18N[savedLang]) { const nav=(navigator.language||'en').slice(0,2).toLowerCase(); savedLang = I18N[nav] ? nav : 'en'; }
+  lsel.value = savedLang;
+  lsel.addEventListener('change', () => { applyLang(lsel.value); syncLog(); syncTest(); });
+  applyLang(savedLang); syncLog(); syncTest();
+
+  // ----- Réorganisation des panneaux (glisser-déposer la poignée, ordre mémorisé) -----
+  const GRID = $('panel-grid');
+  const ORDER_KEY = 'ody-dash-order';
+  const pcards = () => Array.from(GRID.querySelectorAll(':scope > .card'));
+  function saveOrder(){ try{ localStorage.setItem(ORDER_KEY, JSON.stringify(pcards().map(c=>c.dataset.panel))); }catch(e){} }
+  (function restoreOrder(){
+    let ord=null; try{ ord=JSON.parse(localStorage.getItem(ORDER_KEY)||'null'); }catch(e){}
+    if(Array.isArray(ord)) ord.forEach(p=>{ const el=GRID.querySelector(':scope > [data-panel="'+p+'"]'); if(el) GRID.appendChild(el); });
+  })();
+  function rowLayout(){ const c=pcards(); if(c.length<2) return false; const a=c[0].getBoundingClientRect(), b=c[1].getBoundingClientRect(); return Math.abs(a.top-b.top) < Math.min(a.height,b.height)*0.5; }
+  let dragEl=null;
+  pcards().forEach(card=>{
+    const grip=card.querySelector('.grip'); if(!grip) return;
+    grip.addEventListener('pointerdown', ()=> card.setAttribute('draggable','true'));
+    grip.addEventListener('pointerup',   ()=> card.removeAttribute('draggable'));
+    card.addEventListener('dragstart', e=>{
+      if(card.getAttribute('draggable')!=='true'){ e.preventDefault(); return; }
+      dragEl=card; e.dataTransfer.effectAllowed='move';
+      try{ e.dataTransfer.setData('text/plain', card.dataset.panel||''); }catch(_){}
+      requestAnimationFrame(()=> card.classList.add('dragging'));
+    });
+    card.addEventListener('dragend', ()=>{ card.classList.remove('dragging'); card.removeAttribute('draggable'); dragEl=null; saveOrder(); });
+  });
+  GRID.addEventListener('dragover', e=>{
+    if(!dragEl) return; e.preventDefault(); e.dataTransfer.dropEffect='move';
+    const tgt=e.target.closest('.card'); if(!tgt||tgt===dragEl||tgt.parentNode!==GRID) return;
+    const r=tgt.getBoundingClientRect();
+    const before = rowLayout() ? (e.clientX < r.left + r.width/2) : (e.clientY < r.top + r.height/2);
+    GRID.insertBefore(dragEl, before ? tgt : tgt.nextElementSibling);
+  });
+  GRID.addEventListener('drop', e=> e.preventDefault());
+
+  // demande l'init au backend (évite la course avec NavigationCompleted)
+  send({ type:'ready' });
+  window.__dashReady = true;
+</script>
+</body>
+</html>
