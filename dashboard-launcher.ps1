@@ -132,7 +132,23 @@ function Get-DefaultCtx([string]$name){ $n=$name.ToLower(); $b=0.0
 function Scan-Models{ $list=@(); foreach($d in $SCANDIRS){ if(Test-Path $d){
   Get-ChildItem -Path $d -Recurse -Filter *.gguf -EA SilentlyContinue | ForEach-Object {
     if($_.Name -notmatch '(?i)mmproj'){ $list += [PSCustomObject]@{ Name=$_.Name; Path=$_.FullName; Size=[long]$_.Length } } } } }
-  return $list | Sort-Object Name -Unique }
+  $u = @($list | Sort-Object Name -Unique)
+  if($u.Count -lt $list.Count){ DLog ("scan: " + ($list.Count-$u.Count) + " doublon(s) de nom ignore(s) (meme .gguf dans huggingface ET local ?)") }
+  return $u }
+# Tue UNIQUEMENT le llama-server qui ecoute sur CE port (jamais par nom : un kill global
+# tuerait aussi le serveur d'un autre projet, ex. Aether, qui tourne sur un autre port).
+function Stop-LlamaOnPort([int]$port){
+  if(-not $port){ $port = 8000 }
+  try{
+    $owners = @(Get-NetTCPConnection -LocalPort $port -State Listen -EA SilentlyContinue | Select-Object -ExpandProperty OwningProcess -Unique)
+    foreach($procId in $owners){
+      $pr = Get-Process -Id $procId -EA SilentlyContinue
+      if($pr -and $pr.ProcessName -eq 'llama-server'){ Stop-Process -Id $procId -Force -EA SilentlyContinue; DLog "stop llama pid=$procId port=$port" }
+      elseif($pr){ DLog "port $port occupe par '$($pr.ProcessName)' (pid=$procId) — pas touche" }
+    }
+    if(-not $owners){ DLog "stop: rien n'ecoute sur :$port" }
+  }catch{ DLog ("stopport err: " + $_.Exception.Message) }
+}
 $models=@(Scan-Models)
 DLog "scan: $($models.Count) modeles"
 
@@ -145,18 +161,23 @@ $pollRs=[runspacefactory]::CreateRunspace(); $pollRs.ApartmentState='MTA'; $poll
 $pollRs.SessionStateProxy.SetVariable('S',$S)
 $pollPs=[powershell]::Create(); $pollPs.Runspace=$pollRs
 [void]$pollPs.AddScript({
+  $vramTick=0
   while($S.run){
     # stop & launch sont geres directement dans WebMessageReceived (instantanes, jamais bloques par un test en cours)
     try{ $tc=New-Object System.Net.Sockets.TcpClient; $iar=$tc.BeginConnect('127.0.0.1',7000,$null,$null)
       if($iar.AsyncWaitHandle.WaitOne(600) -and $tc.Connected){$S.odyUp=$true}else{$S.odyUp=$false}; $tc.Close() }catch{ $S.odyUp=$false }
     $S.ody = if($S.odyUp){'En ligne - :7000'}else{'Arrete / injoignable'}
-    # VRAM (toujours, pour la jauge -- pas seulement quand un modele est charge)
-    $vram=''
-    try{ $psi=New-Object System.Diagnostics.ProcessStartInfo; $psi.FileName='nvidia-smi'
-      $psi.Arguments='--query-gpu=memory.used,memory.total,temperature.gpu --format=csv,noheader,nounits'
-      $psi.RedirectStandardOutput=$true; $psi.UseShellExecute=$false; $psi.CreateNoWindow=$true
-      $pr=[System.Diagnostics.Process]::Start($psi); $o=$pr.StandardOutput.ReadToEnd(); $pr.WaitForExit()
-      $aa=($o.Trim() -split ','); if($aa.Count -ge 3){ $S.vramU=[int]($aa[0].Trim()); $S.vramT=[int]($aa[1].Trim()); $S.gpuT=[int]($aa[2].Trim()); $vram="  |  VRAM $($aa[0].Trim())/$($aa[1].Trim()) Mo  $($aa[2].Trim())C" } }catch{}
+    # VRAM : 1 tick sur 3 (~1.8 s) suffit largement — spawner nvidia-smi toutes les 600 ms
+    # faisait ~1.6 process/s en continu pour rien. Les valeurs restent dans $S entre deux mesures.
+    $vramTick++
+    if($vramTick % 3 -eq 1){
+      try{ $psi=New-Object System.Diagnostics.ProcessStartInfo; $psi.FileName='nvidia-smi'
+        $psi.Arguments='--query-gpu=memory.used,memory.total,temperature.gpu --format=csv,noheader,nounits'
+        $psi.RedirectStandardOutput=$true; $psi.UseShellExecute=$false; $psi.CreateNoWindow=$true
+        $pr=[System.Diagnostics.Process]::Start($psi); $o=$pr.StandardOutput.ReadToEnd(); $pr.WaitForExit()
+        $aa=($o.Trim() -split ','); if($aa.Count -ge 3){ $S.vramU=[int]($aa[0].Trim()); $S.vramT=[int]($aa[1].Trim()); $S.gpuT=[int]($aa[2].Trim()) } }catch{}
+    }
+    $vram = if($S.vramT){ "  |  VRAM $($S.vramU)/$($S.vramT) Mo  $($S.gpuT)C" } else { '' }
     try{ $m=Invoke-RestMethod -Uri 'http://127.0.0.1:8000/v1/models' -TimeoutSec 1
       $nm=($m.data | Select-Object -First 1).id
       $S.llm="$nm @ :8000$vram"; $S.llmUp=$true
@@ -287,9 +308,18 @@ $dlPs=[powershell]::Create(); $dlPs.Runspace=$dlRs
               $buf=New-Object byte[] (1MB); $done=[long]0
               $swd=[System.Diagnostics.Stopwatch]::StartNew(); $lastMs=0.0; $lastB=[long]0
               _push 'dl' @{ name=$name; pct=0; mb=0; mbTot=[math]::Round($tot/1MB,0); mbps=0 }
+              $stalled=$false
               while($true){
                 if($S.dlCancel){ break }
-                $n=$in.Read($buf,0,$buf.Length); if($n -le 0){ break }
+                # lecture async testee par tranches de 500 ms : Annuler mord MEME si le reseau gele,
+                # et ~30 s sans le moindre octet = lien mort -> neterr (un Read bloquant restait coince a vie)
+                $rt=$in.ReadAsync($buf,0,$buf.Length); $waits=0
+                while(-not $rt.Wait(500)){
+                  if($S.dlCancel){ break }
+                  $waits++; if($waits -ge 60){ $stalled=$true; break }
+                }
+                if($S.dlCancel -or $stalled){ break }
+                $n=$rt.Result; if($n -le 0){ break }
                 $out.Write($buf,0,$n); $done+=$n
                 $ms=$swd.Elapsed.TotalMilliseconds
                 if(($ms-$lastMs) -gt 450){
@@ -300,7 +330,7 @@ $dlPs=[powershell]::Create(); $dlPs.Runspace=$dlRs
               }
               $out.Close(); try{ $in.Dispose(); $resp.Dispose(); $hc.Dispose() }catch{}
               if($S.dlCancel){ try{ Remove-Item -LiteralPath $tmp -Force }catch{}; _push 'cancelled' @{ name=$name } }
-              elseif($tot -gt 0 -and $done -lt $tot){ try{ Remove-Item -LiteralPath $tmp -Force }catch{}; _push 'neterr' @{ name=$name } }
+              elseif($stalled -or ($tot -gt 0 -and $done -lt $tot)){ try{ Remove-Item -LiteralPath $tmp -Force }catch{}; _push 'neterr' @{ name=$name } }
               else{ Move-Item -Force -LiteralPath $tmp -Destination $dest; _push 'done' @{ name=$name; mb=[math]::Round($done/1MB,0) } }
             }
           }catch{ try{ if(Test-Path -LiteralPath $tmp){ Remove-Item -LiteralPath $tmp -Force } }catch{}; _push 'neterr' @{ name=$name } }
@@ -434,13 +464,13 @@ if ($script:wvOK) {
                 if ($mf.Length -gt 10GB) { $aa += '--cpu-moe'
                   $freeGB = (Get-CimInstance Win32_OperatingSystem).FreePhysicalMemory * 1KB / 1GB
                   if ($freeGB -gt ($mf.Length/1GB + 4)) { $aa += '--no-mmap'; DLog 'auto: --cpu-moe + --no-mmap (RAM large)' } else { DLog 'auto: --cpu-moe (mmap, RAM juste)' } } } catch {}
-              try{ Stop-Process -Name 'llama-server' -Force -EA SilentlyContinue }catch{}
+              Stop-LlamaOnPort ([int]$msg.port)
               Start-Sleep -Milliseconds 800
               try{ '' | Set-Content -LiteralPath $LLMLOG -EA SilentlyContinue; '' | Set-Content -LiteralPath $OUTLOG -EA SilentlyContinue; '' | Set-Content -LiteralPath $ERRLOG -EA SilentlyContinue }catch{}
               $aa += @('--log-file',$LLMLOG,'--log-colors','off','--log-timestamps')
               try{ Start-Process -FilePath $EXE -ArgumentList $aa -WindowStyle Hidden -RedirectStandardOutput $OUTLOG -RedirectStandardError $ERRLOG; DLog "launched (hidden+logfile)" }catch{ DLog ("launch err: " + $_.Exception.Message) }
             }
-            'stop' { try{ Stop-Process -Name 'llama-server' -Force -EA SilentlyContinue }catch{}; DLog "stopped" }
+            'stop' { Stop-LlamaOnPort ([int]$msg.port); DLog "stopped" }
             'test' { $S.testLang = [string]$msg.lang; $S.testPrompt = [string]$msg.prompt; $S.testReq = $true }
             'dl'   { if([string]$msg.act -eq 'cancel'){ $S.dlCancel = $true } elseif([string]$msg.url){ $S.dlReq = [string]$msg.url } }
             'llama' { $S.llamaReq = [string]$msg.act }   # check / update -> traite par le runspace updater

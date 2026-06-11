@@ -565,6 +565,11 @@
     document.querySelectorAll('[data-i18n]').forEach(el => { el.textContent = tr(el.getAttribute('data-i18n')); });
     document.querySelectorAll('[data-i18n-ph]').forEach(el => { el.placeholder = tr(el.getAttribute('data-i18n-ph')); });
     document.querySelectorAll('[data-i18n-title]').forEach(el => { el.title = tr(el.getAttribute('data-i18n-title')); });
+    // les optgroups 🔓/🔒 du select modeles sont generes en JS par dashInit (pas de data-i18n)
+    document.querySelectorAll('#model optgroup').forEach(og => {
+      if (og.label.startsWith('🔓')) og.label = '🔓 ' + tr('uncensored');
+      else if (og.label.startsWith('🔒')) og.label = '🔒 ' + tr('censored');
+    });
     if (_scanned && !MODELS.length) {
       const sel = $('model'); if (sel) { sel.innerHTML=''; const o=document.createElement('option'); o.textContent=tr('noModels'); sel.appendChild(o); }
     }
@@ -715,6 +720,9 @@
     const path = m ? m.path : '…';
     let c = `"${EXE}" -m "${path}" -ngl ${g('ngl')} -c ${g('ctx')} --temp ${g('s-temp')} --top-p ${g('s-topp')} --top-k ${g('s-topk')} --min-p ${g('s-minp')} --repeat-penalty ${g('s-rep')} --host 0.0.0.0 --port ${g('port')}`;
     if ($('fast').checked) c += ' --jinja --reasoning off';
+    // miroir de l'auto-offload du backend (>10 Go => --cpu-moe), pour que l'apercu = la commande reelle
+    // (--no-mmap et --log-file restent decides au lancement : ils dependent de la RAM libre / du fichier de log)
+    if (m && m.size > 10 * 1073741824) c += ' --cpu-moe';
     $('cmd').textContent = c;
   }
 
@@ -848,7 +856,7 @@
       $('llm-status').textContent = 'LLM : ' + tr('launching');
       $('llm-log').hidden=false; syncLog();
     }
-    else if (act === 'stop') { send({type:'stop'}); $('llm-status').textContent = 'LLM : ' + tr('stopping'); }
+    else if (act === 'stop') { send({type:'stop', port:(+g('port')||8000)}); $('llm-status').textContent = 'LLM : ' + tr('stopping'); }
     else if (act === 'test') { const tp=($('test-prompt')&&$('test-prompt').value||'').trim(); send({type:'test', lang: LANG, prompt: tp}); $('test-out').hidden=false; syncTest(); $('test-out').textContent = tr('testing'); }
     else if (act === 'llama-check') {
       if (VER.st==='available'){ VER={st:'updating'}; renderVer(); send({type:'llama', act:'update'}); }          // 2e clic = confirmation
