@@ -361,8 +361,10 @@ $script:applyMax = $false
 $geoOK = $false
 try {
   if (Test-Path $GEO) {
-    $geo = Get-Content $GEO -Raw -EA Stop | ConvertFrom-Json
-    $gx=[int]$geo.x; $gy=[int]$geo.y; $gw=[int]$geo.w; $gh=[int]$geo.h
+    # PS est INSENSIBLE A LA CASSE : ne jamais nommer cette variable $geo, ca ecraserait
+    # $GEO (le chemin) et le FormClosing ecrirait alors un fichier nomme "@{y=...}" dans le CWD.
+    $savedGeo = Get-Content $GEO -Raw -EA Stop | ConvertFrom-Json
+    $gx=[int]$savedGeo.x; $gy=[int]$savedGeo.y; $gw=[int]$savedGeo.w; $gh=[int]$savedGeo.h
     if ($gw -ge 200 -and $gh -ge 200) {
       $rect = New-Object System.Drawing.Rectangle($gx,$gy,$gw,$gh)
       foreach ($scr in [System.Windows.Forms.Screen]::AllScreens) { if ($scr.WorkingArea.IntersectsWith($rect)) { $geoOK = $true; break } }
@@ -370,7 +372,7 @@ try {
         $form.StartPosition = 'Manual'
         $form.Size     = New-Object System.Drawing.Size($gw, $gh)
         $form.Location = New-Object System.Drawing.Point($gx, $gy)
-        if ($geo.max) { $script:applyMax = $true }
+        if ($savedGeo.max) { $script:applyMax = $true }
       }
     }
   }
