@@ -136,3 +136,15 @@ Réutilisés d'Odysseus : `static/js/theme.js`, `static/fonts/`, `llama-win/`, l
 - `.gitignore` conseillé : `webview2/*.dll`, `WebView2Loader.dll`, `*.exe`, et le cache `%LOCALAPPDATA%` (hors repo de toute façon).
 - À committer : `dashboard-launcher.ps1`, `static/dashboard.html`, `DASHBOARD.md`, `DASHBOARD.en.md`.
 - Un utilisateur qui clone aura besoin : du Runtime WebView2 (Edge), des DLLs WebView2 (à fournir / documenter), de `llama-win/`, et de la stack Odysseus.
+
+> **MAJ section 8** : FAIT — le repo public existe : `PalpatineRex/odysseus-dashboard` (copie de travail `C:\OdysseusDashboard\`, à resynchroniser après tout edit ici).
+
+---
+
+## 9. Changelog récent
+
+**2026-06-09 — Frameless** : barre WinForms supprimée ; drag + boutons – ▢ ✕ DANS la barre HTML.
+
+**2026-06-10 (nuit) — 9 nouveautés** : chrono **tok/s** au test (badge ⚡) + **sparkline** (30 mesures) · **garage à modèles** 🏁 (tok/s/VRAM/date par modèle, tri vitesse, clic = sélection, localStorage) · **prompt de test perso** (persistant) · **favoris** (⭐ + chips) · **jauge VRAM prédictive** (taille GGUF ×1.1 + ctx, badge `--cpu-moe` >10 Go) · **température GPU** + 🔥 ≥83 °C · switch **auto-start** (skip si serveur déjà up) · **téléchargeur GGUF HF** (runspace dédié, .part→rename, annulable, re-scan auto) · thème custom **Ambulance 🚑**. + mode compact ≤730 px (TV), boutons fenêtre en absolute, i18n complet.
+
+**2026-06-11 — audit + fixes** : **fix géométrie window.json** (collision de casse `$geo`/`$GEO` en PS → la géométrie s'écrivait dans un fichier-poubelle depuis le 6 juin) · **kill llama PAR PORT** (ne tue plus les autres instances llama de la machine — Aether protégé) · téléchargeur anti-gel + annulation instantanée · optgroups i18n · nvidia-smi 1 tick/3 · doublons de scan loggés · aperçu `--cpu-moe` dans la commande.

@@ -7,10 +7,14 @@ Addon **centre de contrôle** pour [Odysseus](https://github.com/pewdiepie-archd
 ## Deux usages
 1. **Avec Odysseus** — boutons Docker intégrés (démarrer / arrêter / mettre à jour / ouvrir l'app). Odysseus découvre automatiquement le `llama-server` lancé ici sur `host.docker.internal:8000`.
 2. **Standalone (lanceur LLM)** — sans Odysseus, juste pour piloter vos modèles locaux :
-   - scan automatique des GGUF (familles/presets déduits du nom de fichier),
-   - presets de samplers par modèle + sliders éditables, aperçu de la commande en direct,
-   - contexte / n-gpu-layers / port, **auto-offload MoE** pour les gros modèles,
-   - **mode rapide** (reasoning off), bouton **tester le modèle**, **logs temps réel** (sans terminal), VRAM live (nvidia-smi).
+   - scan automatique des GGUF (familles/presets déduits du nom de fichier), **favoris** (⭐ + chips one-click),
+   - presets de samplers par modèle + sliders éditables, aperçu de la commande en direct, prompt de test perso,
+   - contexte / n-gpu-layers / port, **auto-offload MoE** pour les gros modèles, **jauge VRAM prédictive** (taille du fichier + contexte, suggestion `--cpu-moe`),
+   - **mode rapide** (reasoning off), bouton **tester le modèle** avec **benchmark tok/s** (badge ⚡ + historique sparkline),
+   - un **garage à modèles** 🏁 — vitesse / VRAM / date par modèle testé, tri par tok/s, clic = sélection,
+   - **logs temps réel** (sans terminal), VRAM live + **température GPU** 🔥 (nvidia-smi),
+   - **téléchargeur GGUF intégré** (collez une URL HuggingFace, annulable, re-scan auto), switch **auto-start**,
+   - arrêt du llama-server **par port** — ne tue jamais les autres instances llama de la machine.
 
 ## Lancer
 - **`Odysseus-Dashboard.exe`** (fourni, ~71 Ko) — double-clic, fenêtre dédiée, pas de console. `WebView2Loader.dll` est à côté.

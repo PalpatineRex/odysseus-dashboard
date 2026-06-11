@@ -136,3 +136,15 @@ Reused from Odysseus: `static/js/theme.js`, `static/fonts/`, `llama-win/`, the `
 - Suggested `.gitignore`: `webview2/*.dll`, `WebView2Loader.dll`, `*.exe`, and the `%LOCALAPPDATA%` cache (outside the repo anyway).
 - To commit: `dashboard-launcher.ps1`, `static/dashboard.html`, `DASHBOARD.md`, `DASHBOARD.en.md`.
 - A user who clones will need: the WebView2 Runtime (Edge), the WebView2 DLLs (to provide / document), `llama-win/`, and the Odysseus stack.
+
+> **Section 8 update**: DONE — the public repo exists: `PalpatineRex/odysseus-dashboard` (working copy `C:\OdysseusDashboard\`, re-sync after any edit here).
+
+---
+
+## 9. Recent changelog
+
+**2026-06-09 — Frameless**: WinForms title bar removed; drag + – ▢ ✕ buttons INSIDE the HTML bar.
+
+**2026-06-10 (night) — 9 features**: **tok/s benchmark** on test (⚡ badge) + **sparkline** (30 samples) · **model garage** 🏁 (tok/s/VRAM/date per model, speed-sorted, click to select, localStorage) · **custom test prompt** (persistent) · **favorites** (⭐ + chips) · **predictive VRAM gauge** (GGUF size ×1.1 + ctx, `--cpu-moe` badge >10 GB) · **GPU temperature** + 🔥 ≥83 °C · **auto-start** switch (skips if a server is already up) · **HF GGUF downloader** (dedicated runspace, .part→rename, cancellable, auto re-scan) · custom theme **Ambulance 🚑**. + compact mode ≤730 px (TV), absolute window buttons, full i18n.
+
+**2026-06-11 — audit + fixes**: **window.json geometry fix** (PS case-collision `$geo`/`$GEO` → geometry had been written to a junk file since June 6) · **kill llama BY PORT** (no longer kills other llama instances — Aether protected) · downloader anti-freeze + instant cancel · i18n optgroups · nvidia-smi every 3rd tick · duplicate scans logged · `--cpu-moe` in command preview.

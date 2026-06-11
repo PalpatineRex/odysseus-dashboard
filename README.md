@@ -7,10 +7,14 @@ A **control center** addon for [Odysseus](https://github.com/pewdiepie-archdaemo
 ## Two ways to use it
 1. **With Odysseus** — built-in Docker buttons (start / stop / update / open the app). Odysseus auto-discovers the `llama-server` launched here on `host.docker.internal:8000`.
 2. **Standalone (LLM launcher)** — without Odysseus, just to drive your local models:
-   - automatic GGUF scan (model family & sampler presets inferred from the filename),
-   - per-model sampler presets + editable sliders, live command preview,
-   - context / n-gpu-layers / port, **MoE auto-offload** for large models,
-   - **fast mode** (reasoning off), a **test-model** button, **real-time logs** (no terminal), live VRAM (nvidia-smi).
+   - automatic GGUF scan (model family & sampler presets inferred from the filename), **favorites** (⭐ + one-click chips),
+   - per-model sampler presets + editable sliders, live command preview, custom test prompt,
+   - context / n-gpu-layers / port, **MoE auto-offload** for large models, **predictive VRAM gauge** (file size + context, `--cpu-moe` hint),
+   - **fast mode** (reasoning off), **test-model** button with **tok/s benchmark** (⚡ badge + sparkline history),
+   - a **model garage** 🏁 — speed / VRAM / date per tested model, sorted by tok/s, click to select,
+   - **real-time logs** (no terminal), live VRAM + **GPU temperature** 🔥 (nvidia-smi),
+   - built-in **GGUF downloader** (paste a HuggingFace URL, cancellable, auto re-scan), **auto-start** switch,
+   - stops llama-server **by port** — never kills other llama instances running on the machine.
 
 ## Run
 - **`Odysseus-Dashboard.exe`** (included, ~71 KB) — double-click, dedicated window, no console. `WebView2Loader.dll` sits next to it.
