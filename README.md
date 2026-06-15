@@ -4,6 +4,8 @@
 
 A **control center** addon for [Odysseus](https://github.com/pewdiepie-archdaemon/odysseus) — **and a full-featured local LLM launcher in its own right**. A native, frameless WebView2 window that reuses Odysseus's themes and background effects, driven by a PowerShell backend. Built by David (PalpatineRex). Free for anyone to use.
 
+![Odysseus Dashboard — local LLM launcher](docs/screenshot.png)
+
 ## Two ways to use it
 1. **With Odysseus** — built-in Docker buttons (start / stop / update / open the app). Odysseus auto-discovers the `llama-server` launched here on `host.docker.internal:8000`.
 2. **Standalone (LLM launcher)** — without Odysseus, just to drive your local models:
